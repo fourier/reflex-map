@@ -70,15 +70,17 @@
     (dolist (x properties)
       (format stream "~a~%" x))))
 
+(defmethod print-vertex ((self vertex) stream)
+  "Print the contents of the VERTEX"
+  (with-slots (x y z) self
+    (format stream "( ~a ~a ~a )" x y z)))
 
 (defmethod print-object :after ((self vertex) stream)
-  "Print the contents of the ENTITY"
-  (with-slots (x y z) self
-    (format stream "(~a ~a ~a)~%" x y z)))
-
+  "Print the contents of the VERTEX"
+  (print-vertex self stream))
 
 (defmethod print-object :after ((self brush) stream)
-  "Print the contents of the ENTITY"
+  "Print the contents of the BRUSH"
   (with-slots (vertices faces) self
     (format stream "Bursh~%Vertices:~%")
     (dolist (v vertices) (print-object v stream))
@@ -220,6 +222,36 @@
           (setf brushes (nreverse brushes)
                 entities (nreverse entities)))
           m))))
+
+
+(defmethod export-brush ((self brush) out)
+  (with-slots (vertices faces) self
+    (format out "{~%")
+    (dolist (f faces)
+      (mapcar 
+       (lambda (i)
+         (print-vertex (elt vertices i) out)
+         (format out " "))
+       (subseq (face-vertices f) 0 3))
+      (format out " rock4_1 0 0 0 1 1~%"))
+    (format out "}~%")))
+
+(defmethod create-qw-map-file ((self reflex-map) filename)
+  (with-open-file (out filename :direction :output :if-exists :supersede)
+    (format out "// Game: Quake
+// Format: Standard
+// entity 0
+{
+\"classname\" \"worldspawn\"
+\"wad\" \"C:/q1mapping/wads/START.WAD\"~%")
+    ;; implement this
+    (with-slots (brushes) self
+      (loop for br in brushes
+            for i below (length brushes)
+            do
+               (format out "// brush ~d~%" i)
+               (export-brush br out)))
+    (format out "}~%")))
 
 
 (defun main(argv)
