@@ -145,7 +145,7 @@
 
 (defun parse-vertex (line)
   (destructuring-bind (x y z)
-      (parse-and-trim line)
+      (mapcar #'read-from-string (parse-and-trim line))
     (make-instance 'vertex :x x :y y :z z)))
 
 (defun parse-face (line)
@@ -157,12 +157,15 @@
          (texture-offsets (subseq parsed 0 5))
          (texture-name (car (last parsed)))
          (vertices (subseq parsed 5 (1- (length parsed)))))
-    (destructuring-bind (u v s-u s-v rot) texture-offsets
+    (destructuring-bind (u v s-u s-v rot)
+        (mapcar #'read-from-string texture-offsets )
       (make-instance 'face
                      :u u :v v :scale-u s-u :scale-v s-v
                      :rotation rot
                      :texture-name texture-name
-                     :vertices vertices))))
+                     :vertices
+                     (mapcar #'parse-integer
+                             vertices)))))
                    
     
 
