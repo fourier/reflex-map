@@ -1,7 +1,10 @@
 # Reflex-Map
+
+Converter of the maps (brushes only) from Reflex Arena to Quake format.
+
 ## Copyright
 
-Copyright (c) Alexey Veretennikov<alexey.veretennikov@gmail.com>, 2018
+Copyright (c) Alexey Veretennikov, 2018
 
 ## Usage
 
