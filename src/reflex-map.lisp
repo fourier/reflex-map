@@ -7,21 +7,22 @@
 (in-package :cl-user)
 (defpackage reflex-map
   (:use :cl :alexandria :split-sequence)
-  (:export main))
+  (:export convert-reflex-to-qw main))
 
 (in-package :reflex-map)
 
+;; Implementation
 
-(define-condition parse-error (error)
+(define-condition map-parse-error (error)
   ((text :initarg :text))
   (:report (lambda (condition stream)
              (format stream "Parse file error: ~a" (slot-value condition 'text)))))
 
-(define-condition parse-header-error (parse-error) nil)
+(define-condition parse-header-error (map-parse-error) nil)
 
-(define-condition parse-entity-error (parse-error) nil)
+(define-condition parse-entity-error (map-parse-error) nil)
 
-(define-condition parse-brush-error (parse-error) nil)
+(define-condition parse-brush-error (map-parse-error) nil)
 
 (define-condition parse-vertices-error (parse-brush-error) nil)
 
@@ -94,14 +95,16 @@
 
 
 (defun parse-header-line (in-stream)
+  "Parses the first (header) line and returns a file version"
   (when-let (line (read-windows-line in-stream))
     (destructuring-bind (game map version number)
         (split-sequence #\Space line)
-      (and (string= game "reflex")
-           (string= map "map")
-           (string= version "version")
-           (= (parse-integer number) 6)))))
-
+      (let ((ver (parse-integer number)))
+        (when (and (string= game "reflex")
+                   (string= map "map")
+                   (string= version "version")
+                   (> ver 5))
+          ver)))))
 
 (defmacro def-if-header (header)
   (let ((fun-name (concatenate 'string "if-" header)))
@@ -117,10 +120,15 @@
 (def-if-header "faces")
 
 
-(defun if-indent (line count)
-  (starts-with-subseq (make-list count :initial-element #\Tab)
-                      line))
+(defun count-indent (line &optional (indent-char #\tab))
+  (loop for c across line
+        for i below (length line)
+        while (char= c indent-char)
+        finally (return i)))
 
+(defun if-indent (line count)
+  (and line
+       (= (count-indent line) count)))
 
 (defun parse-and-trim (line)
   (split-sequence:split-sequence #\Space (string-trim '(#\Tab #\Space) line)))
@@ -212,7 +220,7 @@
 
 (defun parse-reflex-map-file (filename)
   (with-open-file (in filename :if-does-not-exist nil)
-    (when (parse-header-line in)
+    (when-let (ver (parse-header-line in))
       (let ((m (make-instance 'reflex-map)))
         (loop while (listen in)
               with line = (read-windows-line in)
@@ -236,6 +244,7 @@
       (format out " rock4_1 0 0 0 1 1~%"))
     (format out "}~%")))
 
+
 (defmethod create-qw-map-file ((self reflex-map) filename)
   (with-open-file (out filename :direction :output :if-exists :supersede)
     (format out "// Game: Quake
@@ -254,8 +263,90 @@
     (format out "}~%")))
 
 
+(defun convert-reflex-to-qw (in-filename out-filename)
+  (when-let ((map (parse-reflex-map-file in-filename)))
+    (create-qw-map-file map out-filename)))
+
+
 (defun main(argv)
   (declare (ignore argv))
   (format t "Hello world~%"))
 
-;; Implementation
+;;; new implementation
+
+(defparameter *stack* (list 0))
+(defparameter *parsed-queue* nil)
+
+(defparameter *input-example-data* "level 1
+ level 2
+ still level 2
+  level 3
+  also 3
+ 2 again
+  another 3
+and back to 1
+another level 2 again
+")
+
+(defparameter *parsed-example-data*
+  '("level" "1"
+    indent "level" "2"
+    "still" "level" "2"
+    indent "level" "3"
+    "also" "3"
+    dedent "2" "again"
+    indent "another" "3"
+    dedent dedent "and" "back" "to" "1"
+    indent "another" "level" "2" "again"
+    dedent))
+
+;; grammar:
+;; simp_stmt = string
+;; stmt = simp_stmt | comp_stmt
+;; comp_stmt = indent stmt dedent
+
+;; map-file = header-line newline rest
+;; rest = (high-level-object)*
+
+;; high-level-object = brush | entity
+;; brush = 
+
+
+(defun reflex-map-stream-lexer (in-stream &optional (indent-char #\Tab))
+  (loop for line = (read-windows-line in-stream)
+        while line
+        with result = nil
+        for indent = (count-indent line indent-char)
+        for tokens = (parse-and-trim line)
+        for prev-indent = (car *stack*)
+        if (> indent prev-indent)
+          do
+             (dotimes (i (- indent prev-indent))
+               (push indent *stack*)
+               (push 'indent result))               
+        if (< indent prev-indent)
+          do
+             (dotimes (i (- prev-indent indent))
+               (push 'dedent result)
+               (pop *stack*))
+        do
+           (format t "'~a' current indent: ~a prev: ~a~%"
+                   line
+                   indent prev-indent)
+           (dolist (tok tokens)
+             (push tok result))
+        finally
+           (dotimes (i (car *stack*))
+             (push 'dedent result))
+           (setf *stack* (list 0))
+           (return (nreverse result))))
+
+
+(defun reflex-map-lexer (filename)
+  ;; list of tokens:
+  ;; tab, string, newline
+  (with-open-file (in filename :if-does-not-exist nil)
+    (reflex-map-stream-lexer in)))
+    
+
+
