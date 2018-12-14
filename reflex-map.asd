@@ -12,7 +12,7 @@
   :version "0.1"
   :author ""
   :license ""
-  :depends-on (alexandria split-sequence)
+  :depends-on (alexandria split-sequence cl-ppcre yacc)
   :components ((:module "src"
                 :components
                 ((:file "reflex-map"))))

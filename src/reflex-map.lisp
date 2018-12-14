@@ -13,6 +13,14 @@
 
 ;; Implementation
 
+(defparameter *float-scanner*
+  (ppcre:create-scanner "-?[0-9]+([.][0-9]+([Ee][0-9]+)?)"))
+
+(defparameter *int-scanner*
+  (ppcre:create-scanner "-?[0-9]+"))
+
+
+
 (defclass reflex-map ()
   ((entities :initarg :entities :initform nil :reader map-entities)
    (brushes :initarg :brushes :initform nil :reader map-brushes)))
@@ -61,6 +69,14 @@
   (with-slots (x y z) self
     (format stream "( ~a ~a ~a )" x y z)))
 
+(defmethod print-inverse-vertex ((self vertex) stream)
+  "Print the contents of the VERTEX"
+  (with-slots (x y z) self
+;;    (format stream "( ~a ~a ~a )" z (round (* 0.6 y)) x)))
+;;    (format stream "( ~a ~a ~a )" z x (round (* 0.6 y)))))
+    (format stream "( ~a ~a ~a )" z x y)))
+
+
 (defmethod print-object :after ((self vertex) stream)
   "Print the contents of the VERTEX"
   (print-vertex self stream))
@@ -74,6 +90,9 @@
 ;;;     (format stream "Faces:~%")
 ;;;     (dolist (f faces) (print-object f stream))))
 
+
+(defun make-vertex (x y z)
+  (make-instance 'vertex :x x :y y :z z))
 
 (defun read-windows-line (in)
   (when-let (line (read-line in nil))
@@ -94,19 +113,6 @@
   (split-sequence:split-sequence #\Space (string-trim '(#\Tab #\Space) line)))
 
 
-
-
-
-
-;;; new implementation
-
-(defparameter *parsed-queue* nil)
-
-(defparameter *float-scanner*
-  (ppcre:create-scanner "-?[0-9]+([.][0-9]+([Ee][0-9]+)?)"))
-
-(defparameter *int-scanner*
-  (ppcre:create-scanner "-?[0-9]+"))
 
 
 (defun is-float (token)
@@ -260,7 +266,9 @@
                              v-l)))
 
   (vertices-lines (vertex-line newline
-                               (lambda (v n) (list v))))
+                               (lambda (v n)
+                                 (declare (ignore n))
+                                 (list v))))
   (vertices-lines (vertices-lines vertex-line newline
                                   (lambda (v-l v n)
                                     (declare (ignore n))
@@ -318,15 +326,54 @@
   (yacc:parse-with-lexer (reflex-list-lexer (reflex-map-lexer filename)) *reflex-map-parser*))
 
 
+;; math
+(defun plane-equation (v1 v2 v3)
+  "Calculate the plane equation in format
+Ax+By+Cz+D=0 and returns values A B C D
+v1,v2,v3 are vertices.
+
+The equation is calculated via
+https://www.wolframalpha.com/input/?i=Collect%5Bdet%5B%7Bx-x1,+x2-x1,+x3-x1%7D,%7By-y1,+y2-y1,+y3-y1%7D,%7Bz-z1,+z2-z1,+z3-z1%7D%5D,+%7Bx,y,z%7D%5D
+  
+x (y1 z2 - y1 z3 - y2 z1 + y2 z3 + y3 z1 - y3 z2) + y (-x1 z2 + x1 z3 + x2 z1 - x2 z3 - x3 z1 + x3 z2) + z (x1 y2 - x1 y3 - x2 y1 + x2 y3 + x3 y1 - x3 y2) - x1 y2 z3 + x1 y3 z2 + x2 y1 z3 - x2 y3 z1 - x3 y1 z2 + x3 y2 z1
+
+Hence
+A = (y1 z2 - y1 z3 - y2 z1 + y2 z3 + y3 z1 - y3 z2)
+B = (-x1 z2 + x1 z3 + x2 z1 - x2 z3 - x3 z1 + x3 z2)
+C = (x1 y2 - x1 y3 - x2 y1 + x2 y3 + x3 y1 - x3 y2)
+D = - x1 y2 z3 + x1 y3 z2 + x2 y1 z3 - x2 y3 z1 - x3 y1 z2 + x3 y2 z1"
+  (let* ((x1 (vertex-x v1))
+         (x2 (vertex-x v2))
+         (x3 (vertex-x v3))
+         (y1 (vertex-y v1))
+         (y2 (vertex-y v2))
+         (y3 (vertex-y v3))
+         (z1 (vertex-z v1))
+         (z2 (vertex-z v2))
+         (z3 (vertex-z v3))
+         (A (- (+ (* y1 z2) (* y2 z3) (* y3 z1))
+               (+ (* y1 z3) (* y2 z1) (* y3 z2))))
+         (B (- (+ (* x1 z3) (* x2 z1) (* x3 z2))
+               (+ (* x1 z2) (* x2 z3) (* x3 z1))))
+         (C (- (+ (* x1 y2) (* x2 y3) (* x3 y1))
+               (+ (* x1 y3) (* x2 y1) (* x3 y2))))
+         (D (- (+ (* x1 y3 z2) (* x2 y1 z3) (* x3 y2 z1))
+               (+ (* x1 y2 z3) (* x2 y3 z1) (* x3 y1 z2)))))
+    (values A B C D)))
+                  
+    
+  
+
+
 (defmethod export-brush ((self brush) out)
   (with-slots (vertices faces) self
     (format out "{~%")
     (dolist (f faces)
       (mapcar 
        (lambda (i)
-         (print-vertex (elt vertices i) out)
+         (print-inverse-vertex (elt vertices i) out)
          (format out " "))
-       (subseq (face-vertices f) 0 3))
+       (nreverse (subseq (face-vertices f) 0 3)))
       (format out " rock4_1 0 0 0 1 1~%"))
     (format out "}~%")))
 
@@ -352,6 +399,8 @@
 (defun convert-reflex-to-qw (in-filename out-filename)
   (when-let ((map (parse-reflex-map-file in-filename)))
     (create-qw-map-file map out-filename)))
+
+
 
 
 (defun main(argv)
