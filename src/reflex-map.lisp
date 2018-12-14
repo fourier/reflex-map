@@ -330,11 +330,12 @@ another level 2 again
                (push 'dedent result)
                (pop *stack*))
         do
-           (format t "'~a' current indent: ~a prev: ~a~%"
-                   line
-                   indent prev-indent)
+           ;; (format t "'~a' current indent: ~a prev: ~a~%"
+           ;;         line
+           ;;         indent prev-indent)
            (dolist (tok tokens)
              (push tok result))
+           (push 'newline result)
         finally
            (dotimes (i (car *stack*))
              (push 'dedent result))
