@@ -277,6 +277,14 @@
 (defparameter *stack* (list 0))
 (defparameter *parsed-queue* nil)
 
+(defparameter *float-scanner* 
+  (ppcre:create-scanner "[0-9]+([.][0-9]+([Ee][0-9]+)?)"))
+
+
+(defparameter *int-scanner* 
+  (ppcre:create-scanner "[0-9]+"))
+
+
 (defparameter *input-example-data* "level 1
  level 2
  still level 2
@@ -312,12 +320,34 @@ another level 2 again
 ;; brush = 
 
 
+(defun tokenize-string (line)
+  (let ((tokens 
+          (parse-and-trim line)))
+    tokens))
+  ;(deflexer test-lexer
+;  ("[0-9]+([.][0-9]+([Ee][0-9]+)?)"
+;    (return (values 'flt (num %0))))
+;  ("[0-9]+"
+;    (return (values 'int (int %0))))
+;  ("[0-9]+X"
+;    (return (values 'int (int %0))))
+;  ("[0-9]+L"
+;    (return (values 'int (int %0))))
+;  ("while" (return 'while))
+;  ("wend" (return 'wend))
+;  ("with" (return 'with))
+;  ("wabbit" (return 'wabbit))
+;  ("for" (return 'for))
+;  ("in" (return 'in))
+;  ("loop" (return 'loop))
+
+
 (defun reflex-map-stream-lexer (in-stream &optional (indent-char #\Tab))
   (loop for line = (read-windows-line in-stream)
         while line
         with result = nil
         for indent = (count-indent line indent-char)
-        for tokens = (parse-and-trim line)
+        for tokens = (tokenize-string line)
         for prev-indent = (car *stack*)
         if (> indent prev-indent)
           do
