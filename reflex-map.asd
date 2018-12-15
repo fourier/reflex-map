@@ -12,7 +12,7 @@
   :version "0.1"
   :author ""
   :license ""
-  :depends-on (alexandria split-sequence cl-ppcre yacc)
+  :depends-on (alexandria split-sequence cl-ppcre yacc 3d-vectors 3d-matrices)
   :components ((:module "src"
                 :components
                 ((:file "reflex-map"))))
@@ -28,5 +28,5 @@
                                :element-type 'character
                                :fill-pointer t)))
           (setf (fill-pointer seq) (read-sequence seq stream))
-          seq)))
-  :in-order-to ((test-op (test-op reflex-map-test))))
+          seq)))
+  :in-order-to ((test-op (test-op reflex-map-test))))

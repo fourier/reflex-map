@@ -6,7 +6,7 @@
 
 (in-package :cl-user)
 (defpackage reflex-map
-  (:use :cl :alexandria :split-sequence)
+  (:use :cl :alexandria :split-sequence :3d-matrices :3d-vectors)
   (:export convert-reflex-to-qw main))
 
 (in-package :reflex-map)
@@ -93,6 +93,11 @@
 
 (defun make-vertex (x y z)
   (make-instance 'vertex :x x :y y :z z))
+
+(defmethod vertex-coords ((self vertex))
+  (with-slots (x y z) self
+    (list x y z)))
+  
 
 (defun read-windows-line (in)
   (when-let (line (read-line in nil))
@@ -333,8 +338,9 @@
 
 
 ;; math
-(defun plane-equation (v1 v2 v3)
-  "Calculate the plane equation in format
+(defgeneric plane-equation (v1 v2 v3)
+  (:documentation
+   "Calculate the plane equation in format
 Ax+By+Cz+D=0 and returns values A B C D
 v1,v2,v3 are vertices.
 
@@ -347,7 +353,21 @@ Hence
 A = (y1 z2 - y1 z3 - y2 z1 + y2 z3 + y3 z1 - y3 z2)
 B = (-x1 z2 + x1 z3 + x2 z1 - x2 z3 - x3 z1 + x3 z2)
 C = (x1 y2 - x1 y3 - x2 y1 + x2 y3 + x3 y1 - x3 y2)
-D = - x1 y2 z3 + x1 y3 z2 + x2 y1 z3 - x2 y3 z1 - x3 y1 z2 + x3 y2 z1"
+D = - x1 y2 z3 + x1 y3 z2 + x2 y1 z3 - x2 y3 z1 - x3 y1 z2 + x3 y2 z1"))
+
+
+(defun plane-equation-impl (x1 y1 z1 x2 y2 z2 x3 y3 z3)
+  (let ((A (- (+ (* y1 z2) (* y2 z3) (* y3 z1))
+              (+ (* y1 z3) (* y2 z1) (* y3 z2))))
+        (B (- (+ (* x1 z3) (* x2 z1) (* x3 z2))
+              (+ (* x1 z2) (* x2 z3) (* x3 z1))))
+        (C (- (+ (* x1 y2) (* x2 y3) (* x3 y1))
+              (+ (* x1 y3) (* x2 y1) (* x3 y2))))
+        (D (- (+ (* x1 y3 z2) (* x2 y1 z3) (* x3 y2 z1))
+              (+ (* x1 y2 z3) (* x2 y3 z1) (* x3 y1 z2)))))
+    (values A B C D)))
+  
+(defmethod plane-equation ((v1 vertex) (v2 vertex) (v3 vertex))
   (let* ((x1 (vertex-x v1))
          (x2 (vertex-x v2))
          (x3 (vertex-x v3))
@@ -356,32 +376,99 @@ D = - x1 y2 z3 + x1 y3 z2 + x2 y1 z3 - x2 y3 z1 - x3 y1 z2 + x3 y2 z1"
          (y3 (vertex-y v3))
          (z1 (vertex-z v1))
          (z2 (vertex-z v2))
-         (z3 (vertex-z v3))
-         (A (- (+ (* y1 z2) (* y2 z3) (* y3 z1))
-               (+ (* y1 z3) (* y2 z1) (* y3 z2))))
-         (B (- (+ (* x1 z3) (* x2 z1) (* x3 z2))
-               (+ (* x1 z2) (* x2 z3) (* x3 z1))))
-         (C (- (+ (* x1 y2) (* x2 y3) (* x3 y1))
-               (+ (* x1 y3) (* x2 y1) (* x3 y2))))
-         (D (- (+ (* x1 y3 z2) (* x2 y1 z3) (* x3 y2 z1))
-               (+ (* x1 y2 z3) (* x2 y3 z1) (* x3 y1 z2)))))
-    (values A B C D)))
-                  
+         (z3 (vertex-z v3)))
+    (plane-equation-impl x1 y1 z1 x2 y2 z2 x3 y3 z3)))
+
+(defmethod plane-equation ((v1 vec4) (v2 vec4) (v3 vec4))
+  (let* ((x1 (vx v1))
+         (x2 (vx v2))
+         (x3 (vx v3))
+         (y1 (vy v1))
+         (y2 (vy v2))
+         (y3 (vy v3))
+         (z1 (vz v1))
+         (z2 (vz v2))
+         (z3 (vz v3)))
+    (plane-equation-impl x1 y1 z1 x2 y2 z2 x3 y3 z3)))
+
+(defmethod plane-equation ((v1 list) (v2 list) (v3 list))
+  (let* ((x1 (first v1))
+         (x2 (first v2))
+         (x3 (first v3))
+         (y1 (second v1))
+         (y2 (second v2))
+         (y3 (second v3))
+         (z1 (third v1))
+         (z2 (third v2))
+         (z3 (third v3)))
+    (plane-equation-impl x1 y1 z1 x2 y2 z2 x3 y3 z3)))
+
+
+(defun create-flip-transform (brushes)
+  (declare (ignore brushes))
+  (let ((mirror-matrix-x
+          (mat4 '(-1 0 0 0
+                  0 1 0 0
+                  0 0 1 0
+                  0 0 0 1)))
+        (mirror-matrix-y
+          (mat4 '(1 0 0 0
+                  0 -1 0 0
+                  0 0 1 0
+                  0 0 0 1)))
+        (mirror-matrix-z
+          (mat4 '(1 0 0 0
+                  0 1 0 0
+                  0 0 -1 0
+                  0 0 0 1))))
+    (declare (ignore mirror-matrix-x mirror-matrix-y mirror-matrix-z))
+    mirror-matrix-z))
+           
     
+(defun export-face (points transform out)
+  ;;  (declare (ignore transform))
+  (let* ((vertices (nreverse (subseq points 0 3)))
+         (normal (multiple-value-list 
+                  (apply #'plane-equation vertices)))
+         (angle (v. 
+                 (vc (v- (apply #'vec3 (third vertices))
+                         (apply #'vec3 (first vertices)))
+                     (v- (apply #'vec3 (second vertices))
+                         (apply #'vec3 (first vertices))))
+                 (apply #'vec3 (subseq normal 0 3)))))
+    ;; (when (< 0 angle)
+    ;;   (format t "pos~%"))
+;    (format t "angle: ~a~%" angle)
+    (dolist (p vertices)
+      ;; export rotated coordinates z x y
+      (let* ((x (elt p 2))
+             (y (elt p 0))
+             (z (elt p 1))
+             (v (m* transform (vec4 x y z 1))))
+        (format out "( ~a ~a ~a ) " (vx v) (vy v) (vz v)))))))
+;;      (format out "( ~a ~a ~a ) " (x y z))))
+
+            
+    ;; if (dot(cross(m_points[2] - m_points[0], m_points[1] - m_points[0]), m_boundary.normal) < 0.0) {
+    ;;     swap(m_points[1], m_points[2]);
+  ;; }
+
   
 
-
-(defmethod export-brush ((self brush) out)
+(defmethod export-brush ((self brush) transform out)
   (with-slots (vertices faces) self
     (format out "{~%")
     (dolist (f faces)
-      (mapcar 
-       (lambda (i)
-         (print-inverse-vertex (elt vertices i) out)
-         (format out " "))
-       (nreverse (subseq (face-vertices f) 0 3)))
+      (let ((points
+              (loop for vert-idx in (face-vertices f)
+                    for coords = (vertex-coords (elt vertices vert-idx))
+                    collect coords into vert-coords
+                    finally (return vert-coords))))
+        (export-face points transform out))
       (format out " rock4_1 0 0 0 1 1~%"))
     (format out "}~%")))
+
+
 
 
 (defmethod create-qw-map-file ((self reflex-map) filename)
@@ -394,11 +481,12 @@ D = - x1 y2 z3 + x1 y3 z2 + x2 y1 z3 - x2 y3 z1 - x3 y1 z2 + x3 y2 z1"
 \"wad\" \"C:/q1mapping/wads/START.WAD\"~%")
     ;; implement this
     (with-slots (brushes) self
-      (loop for br in brushes
-            for i below (length brushes)
-            do
-               (format out "// brush ~d~%" i)
-               (export-brush br out)))
+      (let ((transform (create-flip-transform brushes)))       
+        (loop for br in brushes
+              for i below (length brushes)
+              do
+                 (format out "// brush ~d~%" i)
+                 (export-brush br transform out))))
     (format out "}~%")))
 
 
