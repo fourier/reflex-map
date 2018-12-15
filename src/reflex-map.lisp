@@ -170,15 +170,12 @@
              (dotimes (i (- indent prev-indent))
                (push indent stack)
                (push 'indent result))               
-        if (< indent prev-indent)
+        else
           do
              (dotimes (i (- prev-indent indent))
                (push 'dedent result)
                (pop stack))
         do
-           ;; (format t "'~a' current indent: ~a prev: ~a~%"
-           ;;         line
-           ;;         indent prev-indent)
            (dolist (tok tokens)
              (push tok result))
            (push 'newline result)
@@ -196,15 +193,24 @@
 
 
 ;; grammar:
-;; map ::= header body
-;; header ::= reflex map version integer newline
-;; body ::= global newline indent entries dedent
-;; entries ::= entry newline | entries entry newline
-;; entry ::= brush_entry | entity_entry
-;; entity_entry ::= entity newline indent type string newline entry_attributes dedent
-;; entry_attributes ::= entry_attribute newline | entry_attributes entry_attribute newline
-;; entry_attribute ::= string | entry_attribute string
-
+;; reflex-map ::= header newline body
+;; header ::= reflex map version integer
+;; NOTE: condition here handles 6 vs 8 map version formats
+;; body ::= global newline indent entries dedent | entries
+;; entries ::= entry | entry entries
+;; entry ::= entity-entry | brush-entry 
+;; entity-entry ::= entity newline indent type string newline entry-attributes dedent
+;; entry-attributes ::= entry-attribute-line newline | entry-attributes entry-attribute-line newline
+;; entry-attribute-line ::= entry-attribute-value | entry-attribute-value entry-attribute-line
+;; entry-attribute-value ::= string | integer | float
+;; brush-entry ::= brush newline indent vertices-list faces-list dedent
+;; vertices-list ::= vertices newline indent vertices-lines dedent
+;; vertices-lines ::= vertex-line newline | vertices-lines vertex-line newline
+;; vertex-line ::= float float float
+;; faces-list ::= faces newline indent faces-lines dedent
+;; faces-lines ::= face-line newline | faces-lines face-line newline
+;; face-line ::= float float float float float integer integer integer string | float float float float float integer integer integer integer string | float float float float float integer integer integer | float float float float float integer integer integer integer
+;; 
 
 
 (yacc:define-parser *reflex-map-parser*
