@@ -422,12 +422,12 @@ D = - x1 y2 z3 + x1 y3 z2 + x2 y1 z3 - x2 y3 z1 - x3 y1 z2 + x3 y2 z1"))
                   0 0 -1 0
                   0 0 0 1))))
     (declare (ignore mirror-matrix-x mirror-matrix-y mirror-matrix-z))
-    mirror-matrix-z))
+    mirror-matrix-y))
            
     
 (defun export-face (points transform out)
   ;;  (declare (ignore transform))
-  (let* ((vertices (nreverse (subseq points 0 3)))
+  (let* ((vertices  (subseq points 0 3))
          (normal (multiple-value-list 
                   (apply #'plane-equation vertices)))
          (angle (v. 
@@ -436,22 +436,34 @@ D = - x1 y2 z3 + x1 y3 z2 + x2 y1 z3 - x2 y3 z1 - x3 y1 z2 + x3 y2 z1"))
                      (v- (apply #'vec3 (second vertices))
                          (apply #'vec3 (first vertices))))
                  (apply #'vec3 (subseq normal 0 3)))))
-    ;; (when (< 0 angle)
-    ;;   (format t "pos~%"))
-;    (format t "angle: ~a~%" angle)
-    (dolist (p vertices)
-      ;; export rotated coordinates z x y
-      (let* ((x (elt p 2))
-             (y (elt p 0))
-             (z (elt p 1))
-             (v (m* transform (vec4 x y z 1))))
-        (format out "( ~a ~a ~a ) " (vx v) (vy v) (vz v)))))))
-;;      (format out "( ~a ~a ~a ) " (x y z))))
+    ;; make sure the normal is in positive direction
+    (when (> 0 angle)
+      (rotatef (nth 1 vertices) (nth 2 vertices)))
+    ;; apply transformation
+    (let* ((new-vertices
+             (mapcar (lambda (p)
+                       ;; swap : x y z -> z x y
+                       (let* ((x (elt p 2))
+                              (y (elt p 0))
+                              (z (elt p 1)))
+                         (m* transform (vec4 x y z 1))))
+                     vertices))
+           (new-normal (multiple-value-list 
+                        (apply #'plane-equation new-vertices)))
+           (new-angle
+             (v. 
+              (vc (v- (vxyz (third new-vertices))
+                      (vxyz (first new-vertices)))
+                  (v- (vxyz (second new-vertices))
+                      (vxyz (first new-vertices))))
+              (apply #'vec3 (subseq new-normal 0 3)))))
+      ;; make sure the normal is in positive direction
+      (when (> 0 new-angle)
+        (rotatef (nth 1 new-vertices) (nth 2 new-vertices)))
+      (mapc (lambda (v) (format out "( ~a ~a ~a ) " (vx v) (vy v) (vz v))) new-vertices))))
 
-            
-    ;; if (dot(cross(m_points[2] - m_points[0], m_points[1] - m_points[0]), m_boundary.normal) < 0.0) {
-    ;;     swap(m_points[1], m_points[2]);
-  ;; }
+
+
 
   
 
