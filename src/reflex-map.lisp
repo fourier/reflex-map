@@ -405,28 +405,61 @@ D = - x1 y2 z3 + x1 y3 z2 + x2 y1 z3 - x2 y3 z1 - x3 y1 z2 + x3 y2 z1"))
 
 
 (defun create-flip-transform (brushes)
-  (declare (ignore brushes))
-  (let ((mirror-matrix-x
-          (mat4 '(-1 0 0 0
-                  0 1 0 0
-                  0 0 1 0
-                  0 0 0 1)))
-        (mirror-matrix-y
-          (mat4 '(1 0 0 0
-                  0 -1 0 0
-                  0 0 1 0
-                  0 0 0 1)))
-        (mirror-matrix-z
-          (mat4 '(1 0 0 0
-                  0 1 0 0
-                  0 0 -1 0
-                  0 0 0 1))))
-    (declare (ignore mirror-matrix-x mirror-matrix-y mirror-matrix-z))
-    mirror-matrix-y))
+  ;; find center
+  (let* ((center
+           (loop for b in brushes
+                 for verc = (mapcar #'vertex-coords
+                                    (brush-vertices b))
+                 for brush-bnds = (loop for v in verc
+                                        minimizing (first v) into xmin
+                                        minimizing (second v) into ymin
+                                        minimizing (third v) into zmin
+                                        maximizing (first v) into xmax
+                                        maximizing (second v) into ymax
+                                        maximizing (third v) into zmax
+                                        finally (return (list xmin ymin zmin xmax ymax zmax)))
+                 minimizing (elt brush-bnds 0) into xmin
+                 minimizing (elt brush-bnds 1) into ymin
+                 minimizing (elt brush-bnds 2) into zmin
+                 maximizing (elt brush-bnds 3) into xmax
+                 maximizing (elt brush-bnds 4) into ymax
+                 maximizing (elt brush-bnds 5) into zmax
+                 finally (return (list ;; perform swap z x y
+                                  (/ (+ zmin zmax) 2)
+                                  (/ (+ xmin xmax) 2)
+                                  (/ (+ ymin ymax) 2)))))
+         (mirror-matrix-x
+           (mat4 '(-1 0 0 0
+                   0 1 0 0
+                   0 0 1 0
+                   0 0 0 1)))
+         (mirror-matrix-y
+           (mat4 '(1 0 0 0
+                   0 -1 0 0
+                   0 0 1 0
+                   0 0 0 1)))
+         (mirror-matrix-z
+           (mat4 '(1 0 0 0
+                   0 1 0 0
+                   0 0 -1 0
+                   0 0 0 1)))
+         (trans+center (mat4 (list 1 0 0 (first center)
+                                   0 1 0 (second center)
+                                   0 0 1 (third center)
+                                   0 0 0 1)))
+         (trans-center (mat4 (list 1 0 0 (- (first center))
+                                   0 1 0 (- (second center))
+                                   0 0 1 (- (third center))
+                                   0 0 0 1))))
+    ;; flip horizontally from TrenchBroom
+    ;;  const auto transform = vm::translationMatrix(center) * vm::mirrorMatrix<FloatType>(axis) * vm::translationMatrix(-center);
+    (declare (ignore mirror-matrix-x mirror-matrix-z))
+    ;; (format t "geometry center: ~a ~a ~a~%" (first center)
+    ;;         (second center) (third center))
+    (m* (m* trans+center mirror-matrix-y) trans-center)))
            
     
 (defun export-face (points transform out)
-  ;;  (declare (ignore transform))
   (let* ((vertices  (subseq points 0 3))
          (normal (multiple-value-list 
                   (apply #'plane-equation vertices)))
@@ -510,5 +543,7 @@ D = - x1 y2 z3 + x1 y3 z2 + x2 y1 z3 - x2 y3 z1 - x3 y1 z2 + x3 y2 z1"))
 
 
 (defun main(argv)
-  (declare (ignore argv))
-  (format t "Hello world~%"))
+  (let ((from (first argv))
+        (to (second argv)))
+    (convert-reflex-to-qw from to)))
+

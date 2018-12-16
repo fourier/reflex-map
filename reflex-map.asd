@@ -12,7 +12,7 @@
   :version "0.1"
   :author ""
   :license ""
-  :depends-on (alexandria split-sequence cl-ppcre yacc 3d-vectors 3d-matrices)
+  :depends-on (alexandria split-sequence cl-ppcre yacc 3d-vectors 3d-matrices ppath)
   :components ((:module "src"
                 :components
                 ((:file "reflex-map"))))
