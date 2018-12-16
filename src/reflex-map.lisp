@@ -6,7 +6,7 @@
 
 (in-package :cl-user)
 (defpackage reflex-map
-  (:use :cl :alexandria :split-sequence :3d-matrices :3d-vectors)
+  (:use :cl :alexandria :split-sequence :3d-matrices :3d-vectors   #+:lispworks :capi)
   (:export convert-reflex-to-qw main))
 
 (in-package :reflex-map)
@@ -540,11 +540,56 @@ D = - x1 y2 z3 + x1 y3 z2 + x2 y1 z3 - x2 y3 z1 - x3 y1 z2 + x3 y2 z1"))
   (when-let ((map (parse-reflex-map-file in-filename)))
     (create-qw-map-file map out-filename)))
 
+#+lispworks
+(capi:define-interface my-interface ()
+  ()
+  (:panes
+   (input-file-edit text-input-choice 
+                    :title "Input (reflex) MAP file"
+                    :buttons 
+                    '(:browse-file (:image :std-file-open) :ok nil))
+   (output-file-edit text-input-choice
+                          :title"Output (QW) MAP file"
+                          :buttons 
+                          '(:browse-file (:image :std-file-open) :ok nil))
+   (convert-button push-button :text "Convert" :callback 'on-convert-button))
+  (:layouts
+   (main-layout column-layout '(input-file-edit
+                                output-file-edit
+                                convert-button)
+                :adjust :center
+                :internal-border 20))
+  (:default-initargs :title "Reflex Arena map geometry converter"
+   :layout 'main-layout
+   :initial-focus 'input-file-edit
+   :visible-min-width 400
+   ;;   :help-callback 'on-main-window-tooltip
+   ))
+
+#+:lispworks
+(defun on-convert-button (data self)
+  (declare (ignore data))           
+  (with-slots (input-file-edit
+               output-file-edit
+               convert-button) self
+    (flet ((enable-interface (enable)
+             (setf (button-enabled convert-button) enable
+                   (text-input-pane-enabled input-file-edit) enable
+                   (text-input-pane-enabled output-file-edit) enable)))
+      (let ((source-path (text-input-pane-text input-file-edit))
+            (dest-path (text-input-pane-text output-file-edit)))
+        ;; verify what paths are not empty
+        (when (and (> (length source-path) 0) (> (length dest-path) 0))
+          (enable-interface nil)
+          (convert-reflex-to-qw source-path dest-path)
+          (enable-interface t))))))
 
 
-
-(defun main(argv)
-  (let ((from (first argv))
-        (to (second argv)))
-    (convert-reflex-to-qw from to)))
+(defun main(&optional argv)
+  #+:lispworks (declare (ignore argv))
+  #-:lispworks (let ((from (first argv))
+                     (to (second argv)))
+                 (convert-reflex-to-qw from to))
+  #+:lispworks
+  (capi:display (make-instance 'my-interface)))
 
