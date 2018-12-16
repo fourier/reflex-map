@@ -142,7 +142,7 @@
                        (is-int token))
                    (read-from-string token))
                   ((member token '("reflex" "map" "version" "global" "entity" "type" "brush" "vertices" "faces") :test #'string=)
-                   (intern (string-upcase token)))
+                   (intern (string-upcase token) :reflex-map))
                   (t token)))
           (parse-and-trim line)))
 
@@ -338,6 +338,7 @@
 
 
 ;; math
+
 (defgeneric plane-equation (v1 v2 v3)
   (:documentation
    "Calculate the plane equation in format
