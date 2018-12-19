@@ -141,7 +141,7 @@
             (cond ((or (is-float token)
                        (is-int token))
                    (read-from-string token))
-                  ((member token '("reflex" "map" "version" "global" "entity" "type" "brush" "vertices" "faces") :test #'string=)
+                  ((member token '("reflex" "map" "version" "global" "prefab" "entity" "type" "brush" "vertices" "faces") :test #'string=)
                    (intern (string-upcase token) :reflex-map))
                   (t token)))
           (parse-and-trim line)))
@@ -240,6 +240,11 @@
   (entries (entry entries (lambda (e es) (cons e es))))
 
   (entry entity-entry brush-entry)
+
+  (entity-entry (entity newline indent type string newline dedent
+                        (lambda (e n i type typename n2 d)
+                          (declare (ignore e n i type n2 d))
+                          (make-instance 'entity :type typename :properties nil))))
 
   (entity-entry (entity newline indent type string newline entry-attributes dedent
                         (lambda (e n i type typename n-2 e-a d)
