@@ -19,6 +19,9 @@
 (defparameter *int-scanner*
   (ppcre:create-scanner "-?[0-9]+"))
 
+(defparameter *hex-scanner*
+  (ppcre:create-scanner "0[xX][0-9a-fA-F]+"))
+
 
 
 (defclass reflex-map ()
@@ -53,6 +56,7 @@
    (scale-v :initarg :scale-v :initform 1 :type 'float :reader face-scale-v)
    (rotation :initarg :rotation :initform 0 :type 'float :reader face-rotation)
    (vertices :initarg :vertices :initform nil :reader face-vertices :documentation "an array of indexes of corresponding ver~tices")
+   (texture-color :initarg :texture-color :initform "" :type 'string :reader face-texture-color)
    (texture-name :initarg :texture-name :initform "" :type 'string :reader face-texture-name)))
 
 
@@ -118,23 +122,19 @@
   (split-sequence:split-sequence #\Space (string-trim '(#\Tab #\Space) line)))
 
 
+(defmacro def-is-fun (type scanner-var)
+  (let ((fun-name (intern (string-upcase (concatenate 'string "is-" (symbol-name type))))))
+  `(progn
+     (defun ,fun-name (token)
+       (multiple-value-bind (start end)
+           (ppcre:scan ,scanner-var token)
+         (and start end
+              (= (- end start) (length token))))))))
 
-
-(defun is-float (token)
-  "check if the full string is a full floating point number"
-  (multiple-value-bind (start end)
-      (ppcre:scan *float-scanner* token)
-    (and start end
-         (= (- end start) (length token)))))
-
-(defun is-int (token)
-  "check if the full string is a full floating point number"
-  (multiple-value-bind (start end)
-      (ppcre:scan *int-scanner* token)
-    (and start end
-         (= (- end start) (length token)))))
-
-
+(def-is-fun float *float-scanner*)
+(def-is-fun int   *int-scanner*)
+(def-is-fun hex   *hex-scanner*)
+  
     
 (defun tokenize-string (line)
   (mapcar (lambda (token)
@@ -150,15 +150,17 @@
 (defun reflex-list-lexer (tokens)
   #'(lambda ()
       (let ((value (pop tokens)))
+        (print value)
         (if (null value)
             (values nil nil)
             (let ((terminal
-                   (cond ((stringp value) 'string)
-                         ((integerp value) 'integer)
-                         ((floatp value) 'float)
-                         ;; value of symbol is the symbol itself
-                         ((symbolp value) value)
-                         (t (error "Unexpected value ~S" value)))))
+                    (cond ((and (stringp value) (is-hex value)) 'hex)
+                          ((stringp value) 'string)
+                          ((integerp value) 'integer)
+                          ((floatp value) 'float)
+                          ;; value of symbol is the symbol itself
+                          ((symbolp value) value)
+                          (t (error "Unexpected value ~S" value)))))
               (values terminal value))))))
 
 
@@ -202,8 +204,11 @@
 ;; header ::= reflex map version integer
 ;; NOTE: condition here handles 6 vs 8 map version formats
 ;; body ::= global newline indent entries dedent | entries
+;;
+;;
 ;; entries ::= entry | entry entries
 ;; entry ::= entity-entry | brush-entry 
+;; entity-entry ::= entity newline indent type string newline dedent
 ;; entity-entry ::= entity newline indent type string newline entry-attributes dedent
 ;; entry-attributes ::= entry-attribute-line newline | entry-attributes entry-attribute-line newline
 ;; entry-attribute-line ::= entry-attribute-value | entry-attribute-value entry-attribute-line
@@ -220,21 +225,36 @@
 
 (yacc:define-parser *reflex-map-parser*
   (:start-symbol reflex-map)
-  (:terminals (string integer float newline indent dedent reflex map version global entity type brush vertices faces))
+  (:terminals (string integer float hex newline indent dedent reflex map version global prefab entity type brush vertices faces))
   (reflex-map (header newline body
                       (lambda (h n b)
                         (declare (ignore h n))
-                        (let ((entities-list (remove-if (lambda (x) (eql (type-of x) 'brush)) b))
-                              (brushes-list (remove-if (lambda (x) (eql (type-of x) 'entity)) b)))
-                          (make-instance 'reflex-map :entities entities-list :brushes brushes-list)))))
+                                 b)))
 
   (header (reflex map version integer))
+  (body
+   (prefabs
+    (lambda (p)
+      (let ((entities-list (remove-if (lambda (x) (eql (type-of x) 'brush)) p))
+            (brushes-list (remove-if (lambda (x) (eql (type-of x) 'entity)) p)))
+        (make-instance 'reflex-map :entities entities-list :brushes brushes-list))))
+   (entries
+    (lambda (e)
+      (let ((entities-list (remove-if (lambda (x) (eql (type-of x) 'brush)) e))
+            (brushes-list (remove-if (lambda (x) (eql (type-of x) 'entity)) e)))
+        (make-instance 'reflex-map :entities entities-list :brushes brushes-list)))))
 
-  (body (global newline indent entries dedent
-                (lambda (g n i e d)
-                  (declare (ignore g n i d))
-                  e)))
-  (body entries)
+  (prefabs prefab-term)
+  (prefabs (prefab-term prefabs))
+  (prefab-term
+   (global newline indent entries dedent
+           (lambda (g n i e d)
+             (declare (ignore g n i d))
+             e))
+   (prefab string newline indent entries dedent
+                       (lambda (p s n i e d)
+                         (declare (ignore p s n i d))
+                         e)))
 
   (entries (entry #'list))
   (entries (entry entries (lambda (e es) (cons e es))))
@@ -242,11 +262,11 @@
   (entry entity-entry brush-entry)
 
   (entity-entry (entity newline indent type string newline dedent
-                        (lambda (e n i type typename n2 d)
-                          (declare (ignore e n i type n2 d))
-                          (make-instance 'entity :type typename :properties nil))))
+                        (lambda (e n i type typename n-2 d)
+                          (declare (ignore e n i type n-2 d))
+                          (make-instance 'entity :type typename :properties nil)))
 
-  (entity-entry (entity newline indent type string newline entry-attributes dedent
+                (entity newline indent type string newline entry-attributes dedent
                         (lambda (e n i type typename n-2 e-a d)
                           (declare (ignore e n i type n-2 d))
                           (make-instance 'entity :type typename :properties e-a))))
@@ -266,9 +286,7 @@
   (entry-attribute-line (entry-attribute-value entry-attribute-line
                                                (lambda (e-a-v e-a-l)
                                                  (cons e-a-v e-a-l))))
-  (entry-attribute-value string
-                         integer
-                         float)
+  (entry-attribute-value hex string integer float)
 
   (brush-entry (brush newline indent vertices-list faces-list dedent
                         (lambda (b n i v f d)
@@ -305,38 +323,25 @@
                             (lambda (f-l f n)
                               (declare (ignore n))
                               (nconc f-l (list f)))))
-                            
-  (face-line (float float float float float integer integer integer string
-                    (lambda (u v s-u s-v rot v1 v2 v3 texture-name)
-                      (make-instance 'face
-                                     :u u :v v :scale-u s-u :scale-v s-v
-                                     :rotation rot
-                                     :texture-name texture-name
-                                     :vertices (list v1 v2 v3)))))
 
-  (face-line (float float float float float integer integer integer integer string
-                    (lambda (u v s-u s-v rot v1 v2 v3 v4 texture-name)
-                      (make-instance 'face
-                                     :u u :v v :scale-u s-u :scale-v s-v
-                                     :rotation rot
-                                     :texture-name texture-name
-                                     :vertices (list v1 v2 v3 v4)))))
+  (face-line (offsets vertices-list textures
+                      (lambda (offs ver tex)
+                        (destructuring-bind (u v s-u s-v rot) offs
+                          (make-instance 'face
+                                         :u u :v v :scale-u s-u :scale-v s-v
+                                         :rotation rot
+                                         ;; TODO: fix this. could be hex, string or both
+                                         :texture-name tex
+                                         :vertices ver)))))
 
-  (face-line (float float float float float integer integer integer
-                    (lambda (u v s-u s-v rot v1 v2 v3)
-                      (make-instance 'face
-                                     :u u :v v :scale-u s-u :scale-v s-v
-                                     :rotation rot
-                                     :texture-name ""
-                                     :vertices (list v1 v2 v3)))))
+  (offsets (float float float float float
+                  (lambda (u v s-u s-v rot)
+                    (list u v s-u s-v rot))))
 
-  (face-line (float float float float float integer integer integer integer
-                    (lambda (u v s-u s-v rot v1 v2 v3 v4)
-                      (make-instance 'face
-                                     :u u :v v :scale-u s-u :scale-v s-v
-                                     :rotation rot
-                                     :texture-name ""
-                                     :vertices (list v1 v2 v3 v4))))))
+  (vertices-list (integer integer integer integer)
+                 (integer integer integer))
+
+  (textures nil hex string (hex string)))
 
 (defun parse-reflex-map-file (filename)
   (yacc:parse-with-lexer (reflex-list-lexer (reflex-map-lexer filename)) *reflex-map-parser*))
