@@ -40,8 +40,9 @@
     
 
 (defclass entity ()
-  ((type :initarg :type :initform nil)
-   (properties :initarg :properties :initform nil))
+  ((type :initarg :type :initform nil :reader entity-type)
+   (properties :initarg :properties :initform nil
+               :reader entity-properties))
   (:documentation "Entity section representation"))
 
 
@@ -103,6 +104,15 @@
 ;;;     (dolist (v vertices) (print-object v stream))
 ;;;     (format stream "Faces:~%")
 ;;;     (dolist (f faces) (print-object f stream))))
+
+(defmethod find-entity-property ((self entity) name)
+  (when-let (found 
+             (find-if (lambda (prop)
+                        (string= (string-downcase (second prop))
+                                 (string-downcase name)))
+                      (entity-properties self)))
+    (cddr found)))
+
 
 
 (defun make-vertex (x y z)
@@ -272,11 +282,13 @@
            (lambda (g n i e d)
              (declare (ignore g n i d))
              (global-from-entries e)))
-   (prefab string newline indent entries dedent
+   (prefab prefab-name newline indent entries dedent
                        (lambda (p s n i e d)
                          (declare (ignore p n i d))
-                         (prefab-from-entries s e))))
-
+                         (prefab-from-entries (format nil "~a" s) e))))
+  
+  (prefab-name string integer hex float)
+  
   (entries (entry #'list))
   (entries (entry entries (lambda (e es) (cons e es))))
 
@@ -490,7 +502,43 @@ D = - x1 y2 z3 + x1 y3 z2 + x2 y1 z3 - x2 y3 z1 - x3 y1 z2 + x3 y2 z1"))
     ;;         (second center) (third center))
     (m* (m* trans+center mirror-matrix-y) trans-center)))
            
-    
+
+(defun rotation-matrix (v)
+  "rotation matrix for the list of 3 angles given in degrees"
+  (flet ((sind (x)     ; The argument is in degrees 
+           (sin (* x (/ (float pi x) 180))))
+         (cosd (x)     ; The argument is in degrees 
+           (sin (* x (/ (float pi x) 180)))))
+    (destructuring-bind (roll pitch yaw) v
+      (let* ((cr (cosd roll))
+             (sr (sind roll))
+             (r
+               (mat4 (list 1 0 0 0
+                           0 cr (- sr) 0
+                           0 sr cr 0
+                           0 0 0 1)))
+             (cp (cosd pitch))
+             (sp (sind pitch))
+             (p
+               (mat4 (list cp 0 sp 0
+                           0  1 0  0
+                           (- sp) 0 cp 0
+                           0 0 0 1)))
+             (cy (cosd yaw))
+             (sy (sind yaw))
+             (y
+               (mat4 (list cy (- sy)  0  0
+                           sy  cy     0  0
+                           0 0 1 0
+                           0 0 0 1))))
+        ;; (format t "R: ~a~%" r)
+        ;; (format t "P: ~a~%" p)
+        ;; (format t "Y: ~a~%" y)
+        (m* (m* y p) r)))))
+
+
+
+
 (defun export-face (points transform out)
   (let* ((vertices  (subseq points 0 3))
          (normal (multiple-value-list 
@@ -546,6 +594,23 @@ D = - x1 y2 z3 + x1 y3 z2 + x2 y1 z3 - x2 y3 z1 - x3 y1 z2 + x3 y2 z1"))
     (format out "}~%")))
 
 
+(defmethod export-brushes ((self prefab-base) out &optional (transform nil))
+  (with-slots (brushes) self
+    (let ((trans (create-flip-transform brushes)))
+      (when transform
+        (setf trans (m* trans transform)))
+      (loop for br in brushes
+            for i below (length brushes)
+            do
+               (format out "// brush ~d~%" i)
+               (export-brush br trans out)))))
+
+
+(defun position-vector (attrs)
+  (let ((x (third attrs))
+        (y (first attrs))
+        (z (second attrs)))
+    (vec x y z)))
 
 
 (defmethod create-qw-map-file ((self reflex-map) filename)
@@ -556,20 +621,31 @@ D = - x1 y2 z3 + x1 y3 z2 + x2 y1 z3 - x2 y3 z1 - x3 y1 z2 + x3 y2 z1"))
 {
 \"classname\" \"worldspawn\"
 \"wad\" \"C:/q1mapping/wads/START.WAD\"~%")
-    (flet ((export-brushes (prefab)
-             (with-slots (brushes) prefab
-               (let ((transform
-                       (create-flip-transform brushes)))
-                 (loop for br in brushes
-                       for i below (length brushes)
-                       do
-                          (format out "// brush ~d~%" i)
-                          (export-brush br transform out))))))
-      ;; export prefabs
-      ;; (dolist (p (map-prefabs self))
-      ;;   (export-brushes p))
-      ;; export global
-      (export-brushes (map-global-prefab self)))
+    ;; export global
+    (export-brushes (map-global-prefab self) out)
+    ;; export prefabs
+    #|
+    (format out "// prefabs~%")
+    (mapc
+     (lambda (ent)
+       (when-let (found
+                  (find-entity-property ent "prefabName"))
+         (let ((position (find-entity-property ent "position"))
+               (angles (find-entity-property ent "angles")))
+           (when-let (prefab (find-if (lambda (p) (string= (prefab-name p) (car found))) (map-prefabs self)))
+             (when position
+               (let ((transform (mtranslation (position-vector position))))
+                 (when angles
+                   (format t "~a~%" (rotation-matrix angles))
+                   (setf transform
+                         (m* transform
+                             (rotation-matrix angles))))
+
+                 (format t "Embedding prefab ~a~%" (car found))
+                 (format out "// prefab ~a, position: ~{~a~^, ~} angles: ~{~a~^, ~}~%" (car found) position angles)
+                 (export-brushes prefab out transform)))))))
+     (remove-if-not (lambda (e) (string= (string-downcase (entity-type e)) "prefab")) (prefab-entities (map-global-prefab self))))
+    |#
     (format out "}~%")))
 
 
@@ -625,12 +701,17 @@ D = - x1 y2 z3 + x1 y3 z2 + x2 y1 z3 - x2 y3 z1 - x3 y1 z2 + x3 y2 z1"))
           (convert-reflex-to-qw source-path dest-path)
           (enable-interface t))))))
 
+(defun usage (name)
+  (format t "Usage: ~a input-file output-file~%there input-file is a Reflex Arena Map (.map) file, output-file - generated Quake1 .map file~%" name))
 
 (defun main(&optional argv)
   #+:lispworks (declare (ignore argv))
-  #-:lispworks (let ((from (first argv))
-                     (to (second argv)))
-                 (convert-reflex-to-qw from to))
+  #-:lispworks
+  (if (/= (length argv) 3)
+      (usage (car argv))
+      (let ((from (second argv))
+            (to (third argv)))
+        (convert-reflex-to-qw from to)))
   #+:lispworks
   (capi:display (make-instance 'my-interface)))
 

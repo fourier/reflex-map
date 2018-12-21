@@ -7,7 +7,7 @@ LW = ~/Development/lw-console
 .PHONY: all
 .DEFAULT_GOAL := all
 
-all: ccl
+all: sbcl
 
 ccl: 
 	$(CCL_PATH) --load build.lisp --batch
@@ -16,7 +16,7 @@ lw:
 	$(LW) -build_lw.lisp --batch
 
 sbcl:
-	$(SBCL) --load $(BUILD_SRC)
+	$(SBCL) --disable-debugger --load build.lisp
 
 
 test:
