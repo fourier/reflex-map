@@ -13,7 +13,7 @@ ccl:
 	$(CCL_PATH) --load build.lisp --batch
 
 lw:
-	$(CCL_PATH) -build_lw.lisp --batch
+	$(LW) -build_lw.lisp --batch
 
 sbcl:
 	$(SBCL) --load $(BUILD_SRC)

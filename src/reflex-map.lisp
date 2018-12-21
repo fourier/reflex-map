@@ -23,10 +23,20 @@
   (ppcre:create-scanner "0[xX][0-9a-fA-F]+"))
 
 
-
 (defclass reflex-map ()
-  ((entities :initarg :entities :initform nil :reader map-entities)
-   (brushes :initarg :brushes :initform nil :reader map-brushes)))
+  ((version :initarg :version :initform nil :reader map-version)
+   (prefabs :initarg :prefabs :initform nil :reader map-prefabs)
+   (global-prefab :initarg :global :initform nil :reader map-global-prefab)))
+
+(defclass prefab-base ()
+  ((entities :initarg :entities :initform nil :reader prefab-entities)
+   (brushes :initarg :brushes :initform nil :reader prefab-brushes)))
+
+(defclass normal-prefab (prefab-base)
+  ((name :initarg :name :initform "" :reader prefab-name)))
+
+(defclass global-prefab (prefab-base)
+  ())
     
 
 (defclass entity ()
@@ -56,8 +66,8 @@
    (scale-v :initarg :scale-v :initform 1 :type 'float :reader face-scale-v)
    (rotation :initarg :rotation :initform 0 :type 'float :reader face-rotation)
    (vertices :initarg :vertices :initform nil :reader face-vertices :documentation "an array of indexes of corresponding ver~tices")
-   (texture-color :initarg :texture-color :initform "" :type 'string :reader face-texture-color)
-   (texture-name :initarg :texture-name :initform "" :type 'string :reader face-texture-name)))
+   (model-color :initarg :model-color :initform "" :type 'string :reader face-model-color)
+   (model-name :initarg :model-name :initform "" :type 'string :reader face-model-name)))
 
 
 (defmethod print-object :after ((self entity) stream)
@@ -150,7 +160,6 @@
 (defun reflex-list-lexer (tokens)
   #'(lambda ()
       (let ((value (pop tokens)))
-        (print value)
         (if (null value)
             (values nil nil)
             (let ((terminal
@@ -199,6 +208,23 @@
     (reflex-map-stream-lexer in)))
 
 
+(defun prefab-from-entries (name entries)
+  (let ((entities-list (remove-if (lambda (x) (eql (type-of x) 'brush)) entries))
+        (brushes-list (remove-if (lambda (x) (eql (type-of x) 'entity)) entries)))
+    (make-instance 'normal-prefab :name name :entities entities-list :brushes brushes-list)))
+
+(defun global-from-entries (entries)
+  (let ((entities-list (remove-if (lambda (x) (eql (type-of x) 'brush)) entries))
+        (brushes-list (remove-if (lambda (x) (eql (type-of x) 'entity)) entries)))
+    (make-instance 'global-prefab :entities entities-list :brushes brushes-list)))
+
+(defun create-reflex-map (version prefabs)
+  (let ((global (find-if (lambda (x) (eql (type-of x) 'global-prefab)) prefabs))
+        (only-prefabs (remove-if (lambda (x) (eql (type-of x) 'global-prefab)) prefabs)))
+    (make-instance 'reflex-map :version version
+                               :global global
+                               :prefabs only-prefabs)))
+
 ;; grammar:
 ;; reflex-map ::= header newline body
 ;; header ::= reflex map version integer
@@ -226,35 +252,30 @@
 (yacc:define-parser *reflex-map-parser*
   (:start-symbol reflex-map)
   (:terminals (string integer float hex newline indent dedent reflex map version global prefab entity type brush vertices faces))
-  (reflex-map (header newline body
-                      (lambda (h n b)
-                        (declare (ignore h n))
-                                 b)))
+  (reflex-map (header newline body (lambda (h n b)
+                                     (declare (ignore n))
+                                     (create-reflex-map h b))))
 
-  (header (reflex map version integer))
-  (body
-   (prefabs
-    (lambda (p)
-      (let ((entities-list (remove-if (lambda (x) (eql (type-of x) 'brush)) p))
-            (brushes-list (remove-if (lambda (x) (eql (type-of x) 'entity)) p)))
-        (make-instance 'reflex-map :entities entities-list :brushes brushes-list))))
-   (entries
-    (lambda (e)
-      (let ((entities-list (remove-if (lambda (x) (eql (type-of x) 'brush)) e))
-            (brushes-list (remove-if (lambda (x) (eql (type-of x) 'entity)) e)))
-        (make-instance 'reflex-map :entities entities-list :brushes brushes-list)))))
+  (header (reflex map version integer
+                  ;; return version only
+                  (lambda (r m v i)
+                    (declare (ignore r m v))
+                    i)))
+  (body prefabs (entries (lambda (e)
+                           ;; still create a list of 1 element
+                           (list (global-from-entries e)))))
 
-  (prefabs prefab-term)
-  (prefabs (prefab-term prefabs))
+  (prefabs (prefab-term #'list))
+  (prefabs (prefab-term prefabs (lambda (p-t p) (cons p-t p))))
   (prefab-term
    (global newline indent entries dedent
            (lambda (g n i e d)
              (declare (ignore g n i d))
-             e))
+             (global-from-entries e)))
    (prefab string newline indent entries dedent
                        (lambda (p s n i e d)
-                         (declare (ignore p s n i d))
-                         e)))
+                         (declare (ignore p n i d))
+                         (prefab-from-entries s e))))
 
   (entries (entry #'list))
   (entries (entry entries (lambda (e es) (cons e es))))
@@ -324,14 +345,14 @@
                               (declare (ignore n))
                               (nconc f-l (list f)))))
 
-  (face-line (offsets vertices-list textures
+  (face-line (offsets vertices-list models
                       (lambda (offs ver tex)
                         (destructuring-bind (u v s-u s-v rot) offs
                           (make-instance 'face
                                          :u u :v v :scale-u s-u :scale-v s-v
                                          :rotation rot
                                          ;; TODO: fix this. could be hex, string or both
-                                         :texture-name tex
+                                         :model-name tex
                                          :vertices ver)))))
 
   (offsets (float float float float float
@@ -341,7 +362,7 @@
   (vertices-list (integer integer integer integer)
                  (integer integer integer))
 
-  (textures nil hex string (hex string)))
+  (models nil hex string (hex string)))
 
 (defun parse-reflex-map-file (filename)
   (yacc:parse-with-lexer (reflex-list-lexer (reflex-map-lexer filename)) *reflex-map-parser*))
@@ -535,20 +556,30 @@ D = - x1 y2 z3 + x1 y3 z2 + x2 y1 z3 - x2 y3 z1 - x3 y1 z2 + x3 y2 z1"))
 {
 \"classname\" \"worldspawn\"
 \"wad\" \"C:/q1mapping/wads/START.WAD\"~%")
-    ;; implement this
-    (with-slots (brushes) self
-      (let ((transform (create-flip-transform brushes)))       
-        (loop for br in brushes
-              for i below (length brushes)
-              do
-                 (format out "// brush ~d~%" i)
-                 (export-brush br transform out))))
+    (flet ((export-brushes (prefab)
+             (with-slots (brushes) prefab
+               (let ((transform
+                       (create-flip-transform brushes)))
+                 (loop for br in brushes
+                       for i below (length brushes)
+                       do
+                          (format out "// brush ~d~%" i)
+                          (export-brush br transform out))))))
+      ;; export prefabs
+      ;; (dolist (p (map-prefabs self))
+      ;;   (export-brushes p))
+      ;; export global
+      (export-brushes (map-global-prefab self)))
     (format out "}~%")))
 
 
 (defun convert-reflex-to-qw (in-filename out-filename)
   (when-let ((map (parse-reflex-map-file in-filename)))
     (create-qw-map-file map out-filename)))
+
+
+
+;;;;;;;;;;;; Application entry point ;;;;;;;;;;;;
 
 #+lispworks
 (capi:define-interface my-interface ()
