@@ -3,12 +3,6 @@
 
   (C) COPYRIGHT Alexey Veretennikov<alexey.veretennikov@gmail.com>, 2018
 |#
-
-(in-package :cl-user)
-(defpackage reflex-map
-  (:use :cl :alexandria :split-sequence :3d-matrices :3d-vectors   #+:lispworks :capi)
-  (:export convert-reflex-to-qw main))
-
 (in-package :reflex-map)
 
 ;; Implementation
@@ -638,76 +632,14 @@ D = - x1 y2 z3 + x1 y3 z2 + x2 y1 z3 - x2 y3 z1 - x3 y1 z2 + x3 y2 z1"))
 
 ;;;;;;;;;;;; Application entry point ;;;;;;;;;;;;
 
-#+lispworks
-(capi:define-interface my-interface ()
-  ()
-  (:menus
-   (application-menu
-    "File"
-    ((:component
-      (("About"
-        :callback
-        (lambda ()
-          (display-message-on-screen
-           (convert-to-screen nil)
-           "Reflex Arena -> Quake 1 Map Converter ~a~%Copyright (c) Alexey Veretennikov(fourier) 2018" *version*))
-        :callback-type :none))))))
-  (:panes
-   (input-file-edit text-input-choice 
-                    :title "Input (reflex) MAP file"
-                    :callback 'on-convert-button
-                    :buttons 
-                    '(:browse-file (:image :std-file-open) :ok nil))
-   (output-file-edit text-input-choice
-                          :title"Output (QW) MAP file"
-                          :callback 'on-convert-button
-                          :buttons 
-                          '(:browse-file (:image :std-file-open) :ok nil))
-   (convert-button push-button :text "Convert" :callback 'on-convert-button))
-  (:layouts
-   (main-layout column-layout '(input-file-edit
-                                output-file-edit
-                                convert-button)
-                :adjust :center
-                :internal-border 20))
-  (:menu-bar application-menu)
-  (:default-initargs :title (format nil "Reflex Arena -> Quake 1 Map Converter ~a" *version*) 
-   :layout 'main-layout
-   :initial-focus 'input-file-edit
-   :visible-min-width 400
-   ;;   :help-callback 'on-main-window-tooltip
-   ))
-
-#+:lispworks
-(defun on-convert-button (data self)
-  (declare (ignore data))           
-  (with-slots (input-file-edit
-               output-file-edit
-               convert-button) self
-    (flet ((enable-interface (enable)
-             (setf (button-enabled convert-button) enable
-                   (text-input-pane-enabled input-file-edit) enable
-                   (text-input-pane-enabled output-file-edit) enable)))
-      (let ((source-path (text-input-pane-text input-file-edit))
-            (dest-path (text-input-pane-text output-file-edit)))
-        ;; verify what paths are not empty
-        (when (and (> (length source-path) 0) (> (length dest-path) 0))
-          (enable-interface nil)
-          (convert-reflex-to-qw source-path dest-path)
-          (enable-interface t)
-          (display-message "Done"))))))
 
 (defun usage (name)
   (format t "Usage: ~a input-file output-file~%there input-file is a Reflex Arena Map (.map) file, output-file - generated Quake1 .map file~%" name))
 
 (defun main(&optional argv)
-  #+:lispworks (declare (ignore argv))
-  #-:lispworks
   (if (/= (length argv) 3)
       (usage (car argv))
       (let ((from (second argv))
             (to (third argv)))
-        (convert-reflex-to-qw from to)))
-  #+:lispworks
-  (capi:display (make-instance 'my-interface)))
+        (convert-reflex-to-qw from to))))
 

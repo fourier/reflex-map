@@ -15,7 +15,9 @@
   :depends-on (alexandria split-sequence cl-ppcre yacc 3d-vectors 3d-matrices ppath)
   :components ((:module "src"
                 :components
-                ((:file "reflex-map"))))
+                ((:file "package")
+                 (:file "reflex-map")
+                 #+lispworks(:file "ui"))))
   :description ""
   :long-description
   #.(with-open-file (stream (merge-pathnames
