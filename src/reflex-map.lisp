@@ -510,7 +510,8 @@ D = - x1 y2 z3 + x1 y3 z2 + x2 y1 z3 - x2 y3 z1 - x3 y1 z2 + x3 y2 z1"))
            (sin (* x (/ (float pi x) 180))))
          (cosd (x)     ; The argument is in degrees 
            (cos (* x (/ (float pi x) 180)))))
-    (destructuring-bind (roll pitch yaw) v
+;;    (destructuring-bind (roll pitch yaw) v
+    (destructuring-bind (yaw roll pitch ) v      
       (let* ((cr (cosd roll))
              (sr (sind roll))
              (r
@@ -635,10 +636,10 @@ D = - x1 y2 z3 + x1 y3 z2 + x2 y1 z3 - x2 y3 z1 - x3 y1 z2 + x3 y2 z1"))
              (when-let (prefab (find-if (lambda (p) (string= (prefab-name p) (car found))) (map-prefabs self)))
                (when position
                  (let ((transform (mtranslation (position-vector position))))
-                   ;; (when angles
-                   ;;   (setf transform
-                   ;;         (m* (rotation-matrix angles)
-                   ;;             transform)))
+                   (when angles
+                     (setf transform
+                           (m* transform
+                               (rotation-matrix angles))))
                    (format out "// prefab ~a, position: ~{~a~^, ~} angles: ~{~a~^, ~}~%" (car found) position angles)
                    (export-brushes prefab out (m* global-trans transform))))))))
        (remove-if-not (lambda (e) (string= (string-downcase (entity-type e)) "prefab")) (prefab-entities (map-global-prefab self))))
