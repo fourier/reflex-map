@@ -235,30 +235,7 @@
                                :global global
                                :prefabs only-prefabs)))
 
-;; grammar:
-;; reflex-map ::= header newline body
-;; header ::= reflex map version integer
-;; NOTE: condition here handles 6 vs 8 map version formats
-;; body ::= global newline indent entries dedent | entries
-;;
-;;
-;; entries ::= entry | entry entries
-;; entry ::= entity-entry | brush-entry 
-;; entity-entry ::= entity newline indent type string newline dedent
-;; entity-entry ::= entity newline indent type string newline entry-attributes dedent
-;; entry-attributes ::= entry-attribute-line newline | entry-attributes entry-attribute-line newline
-;; entry-attribute-line ::= entry-attribute-value | entry-attribute-value entry-attribute-line
-;; entry-attribute-value ::= string | integer | float
-;; brush-entry ::= brush newline indent vertices-list faces-list dedent
-;; vertices-list ::= vertices newline indent vertices-lines dedent
-;; vertices-lines ::= vertex-line newline | vertices-lines vertex-line newline
-;; vertex-line ::= float float float
-;; faces-list ::= faces newline indent faces-lines dedent
-;; faces-lines ::= face-line newline | faces-lines face-line newline
-;; face-line ::= float float float float float integer integer integer string | float float float float float integer integer integer integer string | float float float float float integer integer integer | float float float float float integer integer integer integer
-;; 
-
-
+;; grammar of the Reflex Arena map file
 (yacc:define-parser *reflex-map-parser*
   (:start-symbol reflex-map)
   (:terminals (string integer float hex newline indent dedent reflex map version global prefab entity type brush vertices faces))
@@ -609,6 +586,31 @@ D = - x1 y2 z3 + x1 y3 z2 + x2 y1 z3 - x2 y3 z1 - x3 y1 z2 + x3 y2 z1"))
 
 
 
+(defmethod export-prefab ((self prefab-base) out
+                          global-trans prefabs)
+  ;; export global
+  (export-brushes self out global-trans)
+  ;; export prefabs
+  (format out "// prefabs~%")
+  (mapc
+   (lambda (ent)
+     (when-let (found
+                (find-entity-property ent "prefabName"))
+       (let ((position (find-entity-property ent "position"))
+             (angles (find-entity-property ent "angles")))
+         (when-let (prefab (find-if (lambda (p) (string= (prefab-name p) (car found))) prefabs))
+           (when position
+             (let ((transform (mtranslation (position-vector position))))
+               (when angles
+                 (setf transform
+                       (m* transform
+                           (rotation-matrix (rotate angles -1)))))
+               (format out "// prefab ~a, position: ~{~a~^, ~} angles: ~{~a~^, ~}~%" (car found) position angles)
+               (export-prefab prefab out (m* global-trans transform) prefabs)))))))
+   (remove-if-not (lambda (e) (string= (string-downcase (entity-type e)) "prefab")) (prefab-entities self))))
+
+
+
 (defmethod create-qw-map-file ((self reflex-map) filename)
   (with-open-file (out filename :direction :output :if-exists :supersede)
     (format out "// Game: Quake
@@ -621,27 +623,9 @@ D = - x1 y2 z3 + x1 y3 z2 + x2 y1 z3 - x2 y3 z1 - x3 y1 z2 + x3 y2 z1"))
     (let ((global-trans (create-flip-transform
                          (prefab-brushes
                           (map-global-prefab self)))))
-      ;; export global
-      (export-brushes (map-global-prefab self)
-                      out global-trans)
-      ;; export prefabs
-      (format out "// prefabs~%")
-      (mapc
-       (lambda (ent)
-         (when-let (found
-                    (find-entity-property ent "prefabName"))
-           (let ((position (find-entity-property ent "position"))
-                 (angles (find-entity-property ent "angles")))
-             (when-let (prefab (find-if (lambda (p) (string= (prefab-name p) (car found))) (map-prefabs self)))
-               (when position
-                 (let ((transform (mtranslation (position-vector position))))
-                   (when angles
-                     (setf transform
-                           (m* transform
-                               (rotation-matrix (rotate angles -1)))))
-                   (format out "// prefab ~a, position: ~{~a~^, ~} angles: ~{~a~^, ~}~%" (car found) position angles)
-                   (export-brushes prefab out (m* global-trans transform))))))))
-       (remove-if-not (lambda (e) (string= (string-downcase (entity-type e)) "prefab")) (prefab-entities (map-global-prefab self))))
+      ;; recursively export prefabs
+      (export-prefab (map-global-prefab self) out
+                     global-trans (map-prefabs self))
       (format out "}~%"))))
 
 
