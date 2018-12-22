@@ -12,6 +12,7 @@
 (in-package :reflex-map)
 
 ;; Implementation
+(defparameter *version* "0.2")
 
 (defparameter *float-scanner*
   (ppcre:create-scanner "-?[0-9]+([.][0-9]+([Ee][0-9]+)?)"))
@@ -640,13 +641,26 @@ D = - x1 y2 z3 + x1 y3 z2 + x2 y1 z3 - x2 y3 z1 - x3 y1 z2 + x3 y2 z1"))
 #+lispworks
 (capi:define-interface my-interface ()
   ()
+  (:menus
+   (application-menu
+    "File"
+    ((:component
+      (("About"
+        :callback
+        (lambda ()
+          (display-message-on-screen
+           (convert-to-screen nil)
+           "Reflex Arena -> Quake 1 Map Converter ~a~%Copyright (c) Alexey Veretennikov(fourier) 2018" *version*))
+        :callback-type :none))))))
   (:panes
    (input-file-edit text-input-choice 
                     :title "Input (reflex) MAP file"
+                    :callback 'on-convert-button
                     :buttons 
                     '(:browse-file (:image :std-file-open) :ok nil))
    (output-file-edit text-input-choice
                           :title"Output (QW) MAP file"
+                          :callback 'on-convert-button
                           :buttons 
                           '(:browse-file (:image :std-file-open) :ok nil))
    (convert-button push-button :text "Convert" :callback 'on-convert-button))
@@ -656,7 +670,8 @@ D = - x1 y2 z3 + x1 y3 z2 + x2 y1 z3 - x2 y3 z1 - x3 y1 z2 + x3 y2 z1"))
                                 convert-button)
                 :adjust :center
                 :internal-border 20))
-  (:default-initargs :title "Reflex Arena map geometry converter"
+  (:menu-bar application-menu)
+  (:default-initargs :title (format nil "Reflex Arena -> Quake 1 Map Converter ~a" *version*) 
    :layout 'main-layout
    :initial-focus 'input-file-edit
    :visible-min-width 400
@@ -679,7 +694,8 @@ D = - x1 y2 z3 + x1 y3 z2 + x2 y1 z3 - x2 y3 z1 - x3 y1 z2 + x3 y2 z1"))
         (when (and (> (length source-path) 0) (> (length dest-path) 0))
           (enable-interface nil)
           (convert-reflex-to-qw source-path dest-path)
-          (enable-interface t))))))
+          (enable-interface t)
+          (display-message "Done"))))))
 
 (defun usage (name)
   (format t "Usage: ~a input-file output-file~%there input-file is a Reflex Arena Map (.map) file, output-file - generated Quake1 .map file~%" name))
