@@ -508,7 +508,7 @@ D = - x1 y2 z3 + x1 y3 z2 + x2 y1 z3 - x2 y3 z1 - x3 y1 z2 + x3 y2 z1"))
   (flet ((sind (x)     ; The argument is in degrees 
            (sin (* x (/ (float pi x) 180))))
          (cosd (x)     ; The argument is in degrees 
-           (sin (* x (/ (float pi x) 180)))))
+           (cos (* x (/ (float pi x) 180)))))
     (destructuring-bind (roll pitch yaw) v
       (let* ((cr (cosd roll))
              (sr (sind roll))
@@ -531,9 +531,6 @@ D = - x1 y2 z3 + x1 y3 z2 + x2 y1 z3 - x2 y3 z1 - x3 y1 z2 + x3 y2 z1"))
                            sy  cy     0  0
                            0 0 1 0
                            0 0 0 1))))
-        ;; (format t "R: ~a~%" r)
-        ;; (format t "P: ~a~%" p)
-        ;; (format t "Y: ~a~%" y)
         (m* (m* y p) r)))))
 
 
@@ -598,7 +595,7 @@ D = - x1 y2 z3 + x1 y3 z2 + x2 y1 z3 - x2 y3 z1 - x3 y1 z2 + x3 y2 z1"))
   (with-slots (brushes) self
     (let ((trans (create-flip-transform brushes)))
       (when transform
-        (setf trans (m* trans transform)))
+        (setf trans (m* transform trans)))
       (loop for br in brushes
             for i below (length brushes)
             do
@@ -624,7 +621,6 @@ D = - x1 y2 z3 + x1 y3 z2 + x2 y1 z3 - x2 y3 z1 - x3 y1 z2 + x3 y2 z1"))
     ;; export global
     (export-brushes (map-global-prefab self) out)
     ;; export prefabs
-    #|
     (format out "// prefabs~%")
     (mapc
      (lambda (ent)
@@ -636,16 +632,14 @@ D = - x1 y2 z3 + x1 y3 z2 + x2 y1 z3 - x2 y3 z1 - x3 y1 z2 + x3 y2 z1"))
              (when position
                (let ((transform (mtranslation (position-vector position))))
                  (when angles
-                   (format t "~a~%" (rotation-matrix angles))
                    (setf transform
-                         (m* transform
-                             (rotation-matrix angles))))
+                         (m* (rotation-matrix angles)
+                             transform)))
 
-                 (format t "Embedding prefab ~a~%" (car found))
+;;                 (format t "Embedding prefab ~a~%" (car found))
                  (format out "// prefab ~a, position: ~{~a~^, ~} angles: ~{~a~^, ~}~%" (car found) position angles)
                  (export-brushes prefab out transform)))))))
      (remove-if-not (lambda (e) (string= (string-downcase (entity-type e)) "prefab")) (prefab-entities (map-global-prefab self))))
-    |#
     (format out "}~%")))
 
 
