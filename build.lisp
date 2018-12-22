@@ -27,9 +27,10 @@
 ;;; Load the application:
 
 (ql:quickload :reflex-map)
+
+#-lispworks (ql:quickload "trivial-dump-core")
 #-lispworks
-(progn 
-  (ql:quickload "trivial-dump-core")
+(eval-when (:compile-toplevel :load-toplevel :execute)
   (trivial-dump-core:save-executable "reflex-map-converter" (lambda () (reflex-map:main #+:ccl ccl:*command-line-argument-list* #+:sbcl *posix-argv*)))
   (quit))
 
