@@ -371,8 +371,9 @@
                   (lambda (u v s-u s-v rot)
                     (list u v s-u s-v rot))))
 
-  (vertices-list (integer integer integer integer)
-                 (integer integer integer))
+  (vertices-list (integer #'list)
+                 (integer vertices-list (lambda (i v-l)
+                                          (cons i v-l))))
 
   (models nil hex string (hex string)))
 
@@ -591,16 +592,13 @@ D = - x1 y2 z3 + x1 y3 z2 + x2 y1 z3 - x2 y3 z1 - x3 y1 z2 + x3 y2 z1"))
     (format out "}~%")))
 
 
-(defmethod export-brushes ((self prefab-base) out &optional (transform nil))
+(defmethod export-brushes ((self prefab-base) out transform)
   (with-slots (brushes) self
-    (let ((trans (create-flip-transform brushes)))
-      (when transform
-        (setf trans (m* transform trans)))
-      (loop for br in brushes
-            for i below (length brushes)
-            do
-               (format out "// brush ~d~%" i)
-               (export-brush br trans out)))))
+    (loop for br in brushes
+          for i below (length brushes)
+          do
+             (format out "// brush ~d~%" i)
+             (export-brush br transform out))))
 
 
 (defun position-vector (attrs)
@@ -608,6 +606,7 @@ D = - x1 y2 z3 + x1 y3 z2 + x2 y1 z3 - x2 y3 z1 - x3 y1 z2 + x3 y2 z1"))
         (y (first attrs))
         (z (second attrs)))
     (vec x y z)))
+
 
 
 (defmethod create-qw-map-file ((self reflex-map) filename)
@@ -618,29 +617,32 @@ D = - x1 y2 z3 + x1 y3 z2 + x2 y1 z3 - x2 y3 z1 - x3 y1 z2 + x3 y2 z1"))
 {
 \"classname\" \"worldspawn\"
 \"wad\" \"C:/q1mapping/wads/START.WAD\"~%")
-    ;; export global
-    (export-brushes (map-global-prefab self) out)
-    ;; export prefabs
-    (format out "// prefabs~%")
-    (mapc
-     (lambda (ent)
-       (when-let (found
-                  (find-entity-property ent "prefabName"))
-         (let ((position (find-entity-property ent "position"))
-               (angles (find-entity-property ent "angles")))
-           (when-let (prefab (find-if (lambda (p) (string= (prefab-name p) (car found))) (map-prefabs self)))
-             (when position
-               (let ((transform (mtranslation (position-vector position))))
-                 (when angles
-                   (setf transform
-                         (m* (rotation-matrix angles)
-                             transform)))
-
-;;                 (format t "Embedding prefab ~a~%" (car found))
-                 (format out "// prefab ~a, position: ~{~a~^, ~} angles: ~{~a~^, ~}~%" (car found) position angles)
-                 (export-brushes prefab out transform)))))))
-     (remove-if-not (lambda (e) (string= (string-downcase (entity-type e)) "prefab")) (prefab-entities (map-global-prefab self))))
-    (format out "}~%")))
+    ;; get the global transformation matrix
+    (let ((global-trans (create-flip-transform
+                         (prefab-brushes
+                          (map-global-prefab self)))))
+      ;; export global
+      (export-brushes (map-global-prefab self)
+                      out global-trans)
+      ;; export prefabs
+      (format out "// prefabs~%")
+      (mapc
+       (lambda (ent)
+         (when-let (found
+                    (find-entity-property ent "prefabName"))
+           (let ((position (find-entity-property ent "position"))
+                 (angles (find-entity-property ent "angles")))
+             (when-let (prefab (find-if (lambda (p) (string= (prefab-name p) (car found))) (map-prefabs self)))
+               (when position
+                 (let ((transform (mtranslation (position-vector position))))
+                   ;; (when angles
+                   ;;   (setf transform
+                   ;;         (m* (rotation-matrix angles)
+                   ;;             transform)))
+                   (format out "// prefab ~a, position: ~{~a~^, ~} angles: ~{~a~^, ~}~%" (car found) position angles)
+                   (export-brushes prefab out (m* global-trans transform))))))))
+       (remove-if-not (lambda (e) (string= (string-downcase (entity-type e)) "prefab")) (prefab-entities (map-global-prefab self))))
+      (format out "}~%"))))
 
 
 (defun convert-reflex-to-qw (in-filename out-filename)
