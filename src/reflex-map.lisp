@@ -312,7 +312,9 @@
                                   (lambda (v-l v n)
                                     (declare (ignore n))
                                     (nconc v-l (list v)))))
-  (vertex-line (float float float (lambda (x y z) (make-instance 'vertex :x x :y y :z z))))
+  (vertex-line (float float float
+                      ;; perform conversion here
+                      (lambda (x z y) (make-instance 'vertex :x x :y y :z z))))
 
   (faces-list (faces newline indent faces-lines dedent
                      (lambda (f n i f-l d)
@@ -473,43 +475,46 @@ D = - x1 y2 z3 + x1 y3 z2 + x2 y1 z3 - x2 y3 z1 - x3 y1 z2 + x3 y2 z1"))
     (declare (ignore mirror-matrix-x mirror-matrix-z))
     ;; (format t "geometry center: ~a ~a ~a~%" (first center)
     ;;         (second center) (third center))
-    (m* (m* trans+center mirror-matrix-y) trans-center)))
+    ;;  (m* (m* trans+center mirror-matrix-y) trans-center))
+    (meye 4)))
+  
            
 
-(defun rotation-matrix (v)
-  "rotation matrix for the list of 3 angles given in degrees"
+(defun rotation-matrix (roll pitch yaw)
+  "Rotation matrix for the list of 3 angles given in degrees.
+Angles are Roll, Pitch, Yaw"
   (flet ((sind (x)     ; The argument is in degrees 
            (sin (* x (/ (float pi x) 180))))
          (cosd (x)     ; The argument is in degrees 
            (cos (* x (/ (float pi x) 180)))))
-    (destructuring-bind (roll pitch yaw) v
-      (let* ((cr (cosd roll))
-             (sr (sind roll))
-             (r
-               (mat4 (list 1 0 0 0
-                           0 cr (- sr) 0
-                           0 sr cr 0
-                           0 0 0 1)))
-             (cp (cosd pitch))
-             (sp (sind pitch))
-             (p
-               (mat4 (list cp 0 sp 0
-                           0  1 0  0
-                           (- sp) 0 cp 0
-                           0 0 0 1)))
-             (cy (cosd yaw))
-             (sy (sind yaw))
-             (y
-               (mat4 (list cy (- sy)  0  0
-                           sy  cy     0  0
-                           0 0 1 0
-                           0 0 0 1))))
-        (m* (m* y p) r)))))
+    (let* ((cr (cosd roll))
+           (sr (sind roll))
+           (r
+             (mat4 (list 1 0 0 0
+                         0 cr (- sr) 0
+                         0 sr cr 0
+                         0 0 0 1)))
+           (cp (cosd pitch))
+           (sp (sind pitch))
+           (p
+             (mat4 (list cp 0 sp 0
+                         0  1 0  0
+                         (- sp) 0 cp 0
+                         0 0 0 1)))
+           (cy (cosd yaw))
+           (sy (sind yaw))
+           (y
+             (mat4 (list cy (- sy)  0  0
+                         sy  cy     0  0
+                         0 0 1 0
+                         0 0 0 1))))
+      (m* (m* y p) r))))
 
 
 
 
 (defun export-face (points transform out)
+  ;; take first 3 points from the face
   (let* ((vertices  (subseq points 0 3))
          (normal (multiple-value-list 
                   (apply #'plane-equation vertices)))
@@ -525,10 +530,9 @@ D = - x1 y2 z3 + x1 y3 z2 + x2 y1 z3 - x2 y3 z1 - x3 y1 z2 + x3 y2 z1"))
     ;; apply transformation
     (let* ((new-vertices
              (mapcar (lambda (p)
-                       ;; swap : x y z -> z x y
-                       (let* ((x (elt p 2))
-                              (y (elt p 0))
-                              (z (elt p 1)))
+                       (let* ((x (elt p 0))
+                              (y (elt p 1))
+                              (z (elt p 2)))
                          (m* transform (vec4 x y z 1))))
                      vertices))
            (new-normal (multiple-value-list 
@@ -574,8 +578,9 @@ D = - x1 y2 z3 + x1 y3 z2 + x2 y1 z3 - x2 y3 z1 - x3 y1 z2 + x3 y2 z1"))
 
 
 (defun position-vector (attrs &key (4d nil))
-  (let ((x (third attrs))
-        (y (first attrs))
+  ;; transformation : x z y -> x y z
+  (let ((x (first attrs))
+        (y (third attrs))
         (z (second attrs)))
     (if 4d 
         (vec4 x y z 1)
@@ -598,17 +603,18 @@ D = - x1 y2 z3 + x1 y3 z2 + x2 y1 z3 - x2 y3 z1 - x3 y1 z2 + x3 y2 z1"))
            (when position
              (let ((transform (mtranslation (position-vector position))))
                (when angles
-                 (setf transform
-                       (m* transform
-                           ;; angles are in format (yaw clockwise, pitch (down), roll (counter-clockwise))
+                 ;; angles are in format (yaw roll pitch)
+                 (destructuring-bind (yaw roll pitch)
+                     angles
+                   (setf transform
+                         (m* transform
                            ;; but rotation-matrix accepts in format (roll, pitch, yaw)
-                         
-                           (rotation-matrix (list
-                                             (third angles)
-                                             (second angles)
-                                             (first angles))))))
+                           (rotation-matrix (- roll)
+                                            (- pitch)
+                                            (- yaw))
+                           ))))
                (format out "// prefab ~a, position: ~{~a~^, ~} angles: ~{~a~^, ~}~%" (car found) position angles)
-               (export-prefab prefab out (m* global-trans transform) prefabs)))))))
+               (export-prefab prefab out (m* transform global-trans) prefabs)))))))
    (remove-if-not (lambda (e) (string= (string-downcase (entity-type e)) "prefab")) (prefab-entities self))))
 
 
