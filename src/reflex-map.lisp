@@ -605,6 +605,26 @@ D = - x1 y2 z3 + x1 y3 z2 + x2 y1 z3 - x2 y3 z1 - x3 y1 z2 + x3 y2 z1"))
    (remove-if-not (lambda (e) (string= (string-downcase (entity-type e)) "prefab")) (prefab-entities self))))
 
 
+(defmethod export-spawns ((self reflex-map) out global-trans)
+  (with-slots (entities) (map-global-prefab self)
+    (mapc
+     (lambda (ent)
+       (let ((position (find-entity-property ent "position"))
+             (angles (find-entity-property ent "angles")))
+         (when position
+       (format out "{
+\"classname\" \"info_player_deathmatch\"~%")
+       (format out "\"origin\" \"
+"origin" "448 1120 248"
+"angle" "90"
+}
+
+
+       (format out "
+       )
+     (remove-if-not (lambda (e) (string= (string-downcase (entity-type e)) "PlayerSpawn")) entities))))
+    
+
 
 (defmethod create-qw-map-file ((self reflex-map) filename)
   (with-open-file (out filename :direction :output :if-exists :supersede)
@@ -621,7 +641,8 @@ D = - x1 y2 z3 + x1 y3 z2 + x2 y1 z3 - x2 y3 z1 - x3 y1 z2 + x3 y2 z1"))
       ;; recursively export prefabs
       (export-prefab (map-global-prefab self) out
                      global-trans (map-prefabs self))
-      (format out "}~%"))))
+      (format out "}~%")
+      (export-spawns self out global-trans))))
 
 
 (defun convert-reflex-to-qw (in-filename out-filename)
