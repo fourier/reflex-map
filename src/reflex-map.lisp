@@ -573,11 +573,13 @@ D = - x1 y2 z3 + x1 y3 z2 + x2 y1 z3 - x2 y3 z1 - x3 y1 z2 + x3 y2 z1"))
              (export-brush br transform out))))
 
 
-(defun position-vector (attrs)
+(defun position-vector (attrs &key (4d nil))
   (let ((x (third attrs))
         (y (first attrs))
         (z (second attrs)))
-    (vec x y z)))
+    (if 4d 
+        (vec4 x y z 1)
+        (vec x y z))))
 
 
 
@@ -586,7 +588,6 @@ D = - x1 y2 z3 + x1 y3 z2 + x2 y1 z3 - x2 y3 z1 - x3 y1 z2 + x3 y2 z1"))
   ;; export global
   (export-brushes self out global-trans)
   ;; export prefabs
-  (format out "// prefabs~%")
   (mapc
    (lambda (ent)
      (when-let (found
@@ -599,30 +600,40 @@ D = - x1 y2 z3 + x1 y3 z2 + x2 y1 z3 - x2 y3 z1 - x3 y1 z2 + x3 y2 z1"))
                (when angles
                  (setf transform
                        (m* transform
-                           (rotation-matrix (rotate (copy-list angles) -1)))))
+                           ;; angles are in format (yaw clockwise, pitch (down), roll (counter-clockwise))
+                           ;; but rotation-matrix accepts in format (roll, pitch, yaw)
+                         
+                           (rotation-matrix (list
+                                             (third angles)
+                                             (second angles)
+                                             (first angles))))))
                (format out "// prefab ~a, position: ~{~a~^, ~} angles: ~{~a~^, ~}~%" (car found) position angles)
                (export-prefab prefab out (m* global-trans transform) prefabs)))))))
    (remove-if-not (lambda (e) (string= (string-downcase (entity-type e)) "prefab")) (prefab-entities self))))
 
 
 (defmethod export-spawns ((self reflex-map) out global-trans)
+  (format out "// spawns~%")
   (with-slots (entities) (map-global-prefab self)
     (mapc
      (lambda (ent)
        (let ((position (find-entity-property ent "position"))
              (angles (find-entity-property ent "angles")))
          (when position
-       (format out "{
+           (let ((p
+                   (m* global-trans
+                       (position-vector position :4d t))))
+             (format out "{
 \"classname\" \"info_player_deathmatch\"~%")
-       (format out "\"origin\" \"
-"origin" "448 1120 248"
-"angle" "90"
-}
-
-
-       (format out "
-       )
-     (remove-if-not (lambda (e) (string= (string-downcase (entity-type e)) "PlayerSpawn")) entities))))
+             (format out "\"origin\" ")
+             (format out "\"~d ~d ~d\"~%" (vx p) (vy p) (vz p))
+             (when angles
+               (let ((a (rotate (copy-list angles) -1)))
+                 (format out "\"angle\" ")
+                 (format out "\"~{~a~^ ~}\"~%" a)))
+           (format out "}~%")))))
+     (remove-if-not (lambda (e) (string= (string-downcase (entity-type e)) "playerspawn")) entities))
+    (values)))
     
 
 
