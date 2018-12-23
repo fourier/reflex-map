@@ -475,8 +475,7 @@ D = - x1 y2 z3 + x1 y3 z2 + x2 y1 z3 - x2 y3 z1 - x3 y1 z2 + x3 y2 z1"))
     (declare (ignore mirror-matrix-x mirror-matrix-z))
     ;; (format t "geometry center: ~a ~a ~a~%" (first center)
     ;;         (second center) (third center))
-    ;;  (m* (m* trans+center mirror-matrix-y) trans-center))
-    (meye 4)))
+    (m* (m* trans+center mirror-matrix-y) trans-center)))
   
            
 
@@ -628,15 +627,18 @@ Angles are Roll, Pitch, Yaw"
          (when position
            (let ((p
                    (m* global-trans
-                       (position-vector position :4d t))))
+                       ;; by some reason spawns are 16-32 
+                       ;; units below the surface
+                       (v+ (vec 0 0 32 0)
+                           (position-vector position :4d t)))))
              (format out "{
 \"classname\" \"info_player_deathmatch\"~%")
              (format out "\"origin\" ")
              (format out "\"~d ~d ~d\"~%" (vx p) (vy p) (vz p))
              (when angles
-               (let ((a (rotate (copy-list angles) -1)))
-                 (format out "\"angle\" ")
-                 (format out "\"~{~a~^ ~}\"~%" a)))
+               ;; in TrenchBroom only one angle supported - yaw
+               (format out "\"angle\" ")
+               (format out "\"~a\"~%" (- 360 (car angles))))
            (format out "}~%")))))
      (remove-if-not (lambda (e) (string= (string-downcase (entity-type e)) "playerspawn")) entities))
     (values)))
@@ -652,9 +654,7 @@ Angles are Roll, Pitch, Yaw"
 \"classname\" \"worldspawn\"
 \"wad\" \"C:/q1mapping/wads/START.WAD\"~%")
     ;; get the global transformation matrix
-    (let ((global-trans (create-flip-transform
-                         (prefab-brushes
-                          (map-global-prefab self)))))
+    (let ((global-trans (meye 4)))
       ;; recursively export prefabs
       (export-prefab (map-global-prefab self) out
                      global-trans (map-prefabs self))
