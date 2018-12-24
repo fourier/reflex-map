@@ -613,7 +613,7 @@ Angles are Roll, Pitch, Yaw"
                                             (- yaw))
                            ))))
                (format out "// prefab ~a, position: ~{~a~^, ~} angles: ~{~a~^, ~}~%" (car found) position angles)
-               (export-prefab prefab out (m* transform global-trans) prefabs)))))))
+               (export-prefab prefab out (m* global-trans transform) prefabs)))))))
    (remove-if-not (lambda (e) (string= (string-downcase (entity-type e)) "prefab")) (prefab-entities self))))
 
 
@@ -627,9 +627,11 @@ Angles are Roll, Pitch, Yaw"
          (when position
            (let ((p
                    (m* global-trans
-                       ;; by some reason spawns are 16-32 
-                       ;; units below the surface
-                       (v+ (vec 0 0 32 0)
+                       ;; for info_player_start the hbox is defined as the following in TrenchBroom:
+                       ;; @baseclass size(-16 -16 -24, 16 16 32) color(0 255 0) = PlayerClass []
+                       ;; therefore we must offset spawn point
+                       ;; by 24 units
+                       (v+ (vec 0 0 24 0)
                            (position-vector position :4d t)))))
              (format out "{
 \"classname\" \"info_player_deathmatch\"~%")
@@ -638,14 +640,14 @@ Angles are Roll, Pitch, Yaw"
              (when angles
                ;; in TrenchBroom only one angle supported - yaw
                (format out "\"angle\" ")
-               (format out "\"~a\"~%" (- 360 (car angles))))
+               (format out "\"~a\"~%" (+ (car angles) 180)))
            (format out "}~%")))))
      (remove-if-not (lambda (e) (string= (string-downcase (entity-type e)) "playerspawn")) entities))
     (values)))
-    
 
 
-(defmethod create-qw-map-file ((self reflex-map) filename)
+
+(defmethod create-qw-map-file ((self reflex-map) filename &optional (scales (list 1 1 1)))
   (with-open-file (out filename :direction :output :if-exists :supersede)
     (format out "// Game: Quake
 // Format: Standard
@@ -654,7 +656,8 @@ Angles are Roll, Pitch, Yaw"
 \"classname\" \"worldspawn\"
 \"wad\" \"C:/q1mapping/wads/START.WAD\"~%")
     ;; get the global transformation matrix
-    (let ((global-trans (meye 4)))
+    (let ((global-trans  (nmscale (meye 4) (apply #'vec scales))))
+;;      (write-matrix global-trans t)
       ;; recursively export prefabs
       (export-prefab (map-global-prefab self) out
                      global-trans (map-prefabs self))
@@ -662,9 +665,10 @@ Angles are Roll, Pitch, Yaw"
       (export-spawns self out global-trans))))
 
 
-(defun convert-reflex-to-qw (in-filename out-filename)
+
+(defun convert-reflex-to-qw (in-filename out-filename &optional (z-scale 1))
   (when-let ((map (parse-reflex-map-file in-filename)))
-    (create-qw-map-file map out-filename)))
+    (create-qw-map-file map out-filename (list 1 1 z-scale))))
 
 
 
@@ -672,12 +676,17 @@ Angles are Roll, Pitch, Yaw"
 
 
 (defun usage (name)
-  (format t "Usage: ~a input-file output-file~%there input-file is a Reflex Arena Map (.map) file, output-file - generated Quake1 .map file~%" name))
+  (format t "Usage: ~a input-file output-file [z-scale=1]~%there input-file is a Reflex Arena Map (.map) file, output-file - generated Quake1 .map file~%and optional 3rd argument specifies floating point z-scale of the converted map (1 is for 100%) which is default" name))
 
 (defun main(&optional argv)
-  (if (/= (length argv) 3)
+  (if (and (/= (length argv) 3)
+           (/= (length argv) 4))
       (usage (car argv))
       (let ((from (second argv))
             (to (third argv)))
-        (convert-reflex-to-qw from to))))
+        (convert-reflex-to-qw from to
+                              (if (= (length argv) 4)
+                                  (read-from-string (fourth argv))
+                                  1.0)))))
+
 
