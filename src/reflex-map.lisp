@@ -625,24 +625,6 @@ TYPE could be one of either:
    (remove-if-not (lambda (e) (string= (string-downcase (entity-type e)) "prefab")) (prefab-entities self))))
 
 
-;; item types:
-;; Burst Gun 0
-;; Shotgun 1
-;; Grenade Launcher 2
-;; Plasma Rifle 3
-;; Rocket Launcer 4
-;; Ion Cannon 5
-;; Bolt Rifle 6
-;; Stake Gun 7
-;; 5 Health 40
-;; 25 Health 41
-;; 50 Health 42
-;; 100 Health 43
-;; 5 Armor 50
-;; Light Armor 51
-;; Medium Armor 52
-;; Heavy Armor 53
-;; Quad Damage 60
 (defmethod export-spawns ((self reflex-map) out global-trans)
   (format out "// spawns~%")
   (with-slots (entities) (map-global-prefab self)
@@ -689,10 +671,6 @@ TYPE could be one of either:
            (when position
              (let ((p
                      (m* global-trans
-                         ;; for info_player_start the hbox is defined as the following in TrenchBroom:
-                         ;; @baseclass size(-16 -16 -24, 16 16 32) color(0 255 0) = PlayerClass []
-                         ;; therefore we must offset spawn point
-                         ;; by 24 units
                          (v+ (vec 0 0 8 0)
                              (position-vector position :type :vec4)))))
                (format out "{
@@ -707,6 +685,84 @@ TYPE could be one of either:
                           "effect")
                  (gethash (string-downcase (car effect-type))
                           light-sources))))
+        entities)))
+    (values)))
+
+
+;; item types:
+;; Burst Gun 0
+;; Shotgun 1
+;; Grenade Launcher 2
+;; Plasma Rifle 3
+;; Rocket Launcer 4
+;; Ion Cannon 5
+;; Bolt Rifle 6
+;; Stake Gun 7
+;; 5 Health 40
+;; 25 Health 41
+;; 50 Health 42
+;; 100 Health 43
+;; 5 Armor 50
+;; Light Armor 51
+;; Medium Armor 52
+;; Heavy Armor 53
+;; Quad Damage 60
+;; shotgun shells 21
+;; gl ammo 22
+;; rl ammo 24
+;; ion ammo 25
+;; plasma ammo 23 
+;; bolt ammo 26
+(defmethod export-items ((self reflex-map) out global-trans)
+  (format out "// pickups~%")
+  (let ((pickup-types (alist-hash-table
+                        '((1 . "weapon_supershotgun") ;; shotgun
+                          (2 . "weapon_grenadelauncher") ;; gl
+                          (3 . "weapon_nailgun") ;; plasma
+                          (4 . "weapon_rocketlauncher") ;; rl
+                          (5 . "weapon_supernailgun") ;; ion
+                          (6 . "weapon_lightning") ;; bolt
+                          (21 . "item_shells") ;; shotty
+                          (22 . "item_rockets") ;; nades
+                          (23 . "item_spikes") ;; plasma
+                          (24 . "item_rockets") ;; rockets
+                          (25 . "item_spikes") ;; ion
+                          (26 . "item_cells") ;; bolt
+                          (41 . "item_health") ;; ?? 25 "spawnflags" "1"
+                          (42 . "item_health") ;; ?? 50 "spawnflags" "0"
+                          (43 . "item_health") ;; "spawnflags" "2"
+
+                          (51 . "item_armor1")
+                          (52 . "item_armor2")
+                          (53 . "item_armorInv")))))
+    (with-slots (entities) (map-global-prefab self)
+      (mapc
+       (lambda (ent)
+         (let* ((position (find-entity-property ent "position"))
+                (pickup-type (car (find-entity-property ent "pickupType"))))
+           (when position
+             (let ((p
+                     (m* global-trans
+                         (v+ (vec 0 0 8 0)
+                             (position-vector position :type :vec4)))))
+               (format out "{
+\"classname\" \"~a\"~%" (gethash pickup-type pickup-types))
+               (format out "\"origin\" ")
+               (format out "\"~d ~d ~d\"~%" (vx p) (vy p) (vz p))
+               (cond ((= pickup-type 41)
+                      (format out "\"spawnflags\" \"~d\"~%" 1))
+                     ((= pickup-type 42)
+                      (format out "\"spawnflags\" \"~d\"~%" 0))
+                     ((= pickup-type 43)
+                      (format out "\"spawnflags\" \"~d\"~%" 2)))
+               (format out "}~%")))))
+       (remove-if-not
+        (lambda (e)
+          (let ((pickup-type (find-entity-property e "pickupType")))
+            (and (string= (string-downcase (entity-type e))
+                          "pickup")
+                 (gethash (car pickup-type)
+                          pickup-types))))
         entities)))
     (values)))
 
@@ -728,7 +784,8 @@ TYPE could be one of either:
                      global-trans (map-prefabs self))
       (format out "}~%")
       (export-spawns self out global-trans)
-      (export-lights self out global-trans))))
+      (export-lights self out global-trans)
+      (export-items  self out global-trans))))
 
 
 
