@@ -672,12 +672,15 @@ TYPE could be one of either:
     (values)))
 
 
+
+
 (defmethod export-lights ((self reflex-map) out global-trans)
   (format out "// lights~%")
   (let ((light-sources (alist-hash-table
-                        '(("industrial/lights/light_rnd" . "light_globe")
-                          ("industrial/lights/light_fluorescent" . "light_flame_large_yellow")
-                          ("industrial/lights/light_step_sml" . "light")) :test #'equalp)))
+                        '(("industrial/lights/light_rnd" . "light_globe") ;; z: -8
+                          ("industrial/lights/light_fluorescent" . "light_flame_large_yellow") ;; z: -12
+                          ("industrial/lights/light_step_sml" . "light")) ;; z: -8
+                        :test #'equalp)))
     (with-slots (entities) (map-global-prefab self)
       (mapc
        (lambda (ent)
@@ -690,7 +693,7 @@ TYPE could be one of either:
                          ;; @baseclass size(-16 -16 -24, 16 16 32) color(0 255 0) = PlayerClass []
                          ;; therefore we must offset spawn point
                          ;; by 24 units
-                         (v+ (vec 0 0 24 0)
+                         (v+ (vec 0 0 8 0)
                              (position-vector position :type :vec4)))))
                (format out "{
 \"classname\" \"~a\"~%" (gethash effect-type light-sources))
