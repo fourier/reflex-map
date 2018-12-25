@@ -648,8 +648,9 @@ TYPE could be one of either:
   (with-slots (entities) (map-global-prefab self)
     (mapc
      (lambda (ent)
-       (let ((position (find-entity-property ent "position"))
-             (angles (find-entity-property ent "angles")))
+       (let* ((position (find-entity-property ent "position"))
+              (angles (find-entity-property ent "angles"))
+              (angle (or (car angles) 0)))
          (when position
            (let ((p
                    (m* global-trans
@@ -663,11 +664,10 @@ TYPE could be one of either:
 \"classname\" \"info_player_deathmatch\"~%")
              (format out "\"origin\" ")
              (format out "\"~d ~d ~d\"~%" (vx p) (vy p) (vz p))
-             (when angles
-               ;; in TrenchBroom only one angle supported - yaw
-               (format out "\"angle\" ")
-               (format out "\"~a\"~%" (+ (car angles) 180)))
-           (format out "}~%")))))
+             ;; in TrenchBroom only one angle supported - yaw
+             (format out "\"angle\" ")
+             (format out "\"~a\"~%" (- 90 angle))
+             (format out "}~%")))))
      (remove-if-not (lambda (e) (string= (string-downcase (entity-type e)) "playerspawn")) entities))
     (values)))
 
