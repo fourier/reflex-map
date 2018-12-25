@@ -313,8 +313,8 @@
                                     (declare (ignore n))
                                     (nconc v-l (list v)))))
   (vertex-line (float float float
-                      ;; perform conversion here
-                      (lambda (x z y) (make-instance 'vertex :x x :y y :z z))))
+                      (lambda (a1 a2 a3)
+                        (position-vector (list a1 a2 a3) :type :vertex)))) 
 
   (faces-list (faces newline indent faces-lines dedent
                      (lambda (f n i f-l d)
@@ -576,14 +576,23 @@ Angles are Roll, Pitch, Yaw"
              (export-brush br transform out))))
 
 
-(defun position-vector (attrs &key (4d nil))
+(defun position-vector (attrs &key (type :vertex))
+  "Convert list of floats (coordinates in Reflex coordinate
+system to appropriate vector depending of keyword :TYPE.
+The coordinates swap is also performed.
+TYPE could be one of either:
+:VERTEX - returns an instance of VERTEX class
+:VEC - returns an instance of vec3
+:VEC4 - returns an instance of vec4"
   ;; transformation : x z y -> x y z
   (let ((x (first attrs))
         (y (third attrs))
         (z (second attrs)))
-    (if 4d 
-        (vec4 x y z 1)
-        (vec x y z))))
+    (case type
+      (:vertex (make-vertex x y z))
+      (:vec (vec x y z))
+      (:vec4 (vec4 x y z 1)))))
+        
 
 
 
@@ -600,7 +609,7 @@ Angles are Roll, Pitch, Yaw"
              (angles (find-entity-property ent "angles")))
          (when-let (prefab (find-if (lambda (p) (string= (prefab-name p) (car found))) prefabs))
            (when position
-             (let ((transform (mtranslation (position-vector position))))
+             (let ((transform (mtranslation (position-vector position :type :vec))))
                (when angles
                  ;; angles are in format (yaw roll pitch)
                  (destructuring-bind (yaw roll pitch)
@@ -632,7 +641,7 @@ Angles are Roll, Pitch, Yaw"
                        ;; therefore we must offset spawn point
                        ;; by 24 units
                        (v+ (vec 0 0 24 0)
-                           (position-vector position :4d t)))))
+                           (position-vector position :type :vec4)))))
              (format out "{
 \"classname\" \"info_player_deathmatch\"~%")
              (format out "\"origin\" ")
@@ -644,6 +653,35 @@ Angles are Roll, Pitch, Yaw"
            (format out "}~%")))))
      (remove-if-not (lambda (e) (string= (string-downcase (entity-type e)) "playerspawn")) entities))
     (values)))
+
+
+(defmethod export-lights ((self reflex-map) out global-trans)
+;;   (format out "// lights~%")
+;;   (with-slots (entities) (map-global-prefab self)
+;;     (mapc
+;;      (lambda (ent)
+;;        (let ((position (find-entity-property ent "position"))
+;;              (angles (find-entity-property ent "angles")))
+;;          (when position
+;;            (let ((p
+;;                    (m* global-trans
+;;                        ;; for info_player_start the hbox is defined as the following in TrenchBroom:
+;;                        ;; @baseclass size(-16 -16 -24, 16 16 32) color(0 255 0) = PlayerClass []
+;;                        ;; therefore we must offset spawn point
+;;                        ;; by 24 units
+;;                        (v+ (vec 0 0 24 0)
+;;                            (position-vector position :4d t)))))
+;;              (format out "{
+;; \"classname\" \"info_player_deathmatch\"~%")
+;;              (format out "\"origin\" ")
+;;              (format out "\"~d ~d ~d\"~%" (vx p) (vy p) (vz p))
+;;              (when angles
+;;                ;; in TrenchBroom only one angle supported - yaw
+;;                (format out "\"angle\" ")
+;;                (format out "\"~a\"~%" (+ (car angles) 180)))
+;;            (format out "}~%")))))
+;;      (remove-if-not (lambda (e) (string= (string-downcase (entity-type e)) "playerspawn")) entities))
+    (values))
 
 
 
@@ -662,7 +700,8 @@ Angles are Roll, Pitch, Yaw"
       (export-prefab (map-global-prefab self) out
                      global-trans (map-prefabs self))
       (format out "}~%")
-      (export-spawns self out global-trans))))
+      (export-spawns self out global-trans)
+      (export-lights self out global-trans))))
 
 
 
