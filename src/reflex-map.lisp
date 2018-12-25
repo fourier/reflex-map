@@ -479,37 +479,36 @@ D = - x1 y2 z3 + x1 y3 z2 + x2 y1 z3 - x2 y3 z1 - x3 y1 z2 + x3 y2 z1"))
   
            
 
-(defun rotation-matrix (roll pitch yaw)
+
+(defun rotation-matrix (along-z along-x along-y)
   "Rotation matrix for the list of 3 angles given in degrees.
-Angles are Roll, Pitch, Yaw"
+Angles are along z axis, x axis and y axis"
   (flet ((sind (x)     ; The argument is in degrees 
            (sin (* x (/ (float pi x) 180))))
          (cosd (x)     ; The argument is in degrees 
            (cos (* x (/ (float pi x) 180)))))
-    (let* ((cr (cosd roll))
-           (sr (sind roll))
-           (r
+    (let* ((cx (cosd along-x))
+           (sx (sind along-x))
+           (x
              (mat4 (list 1 0 0 0
-                         0 cr (- sr) 0
-                         0 sr cr 0
+                         0 cx (- sx) 0
+                         0 sx cx 0
                          0 0 0 1)))
-           (cp (cosd pitch))
-           (sp (sind pitch))
-           (p
-             (mat4 (list cp 0 sp 0
-                         0  1 0  0
-                         (- sp) 0 cp 0
-                         0 0 0 1)))
-           (cy (cosd yaw))
-           (sy (sind yaw))
+           (cy (cosd along-y))
+           (sy (sind along-y))
            (y
-             (mat4 (list cy (- sy)  0  0
-                         sy  cy     0  0
+             (mat4 (list cy 0 sy 0
+                         0  1 0  0
+                         (- sy) 0 cy 0
+                         0 0 0 1)))
+           (cz (cosd along-z))
+           (sz (sind along-z))
+           (z
+             (mat4 (list cz (- sz)  0  0
+                         sz  cz     0  0
                          0 0 1 0
                          0 0 0 1))))
-      (m* (m* y p) r))))
-
-
+      (m* (m* x y) z))))
 
 
 (defun export-face (points transform out)
@@ -611,21 +610,39 @@ TYPE could be one of either:
            (when position
              (let ((transform (mtranslation (position-vector position :type :vec))))
                (when angles
-                 ;; angles are in format (yaw roll pitch)
-                 (destructuring-bind (yaw roll pitch)
+                 ;; angles are in the following format:
+                 ;; considering 
+                 (destructuring-bind (along-z along-x along-y)
                      angles
                    (setf transform
                          (m* transform
-                           ;; but rotation-matrix accepts in format (roll, pitch, yaw)
-                           (rotation-matrix (- roll)
-                                            (- pitch)
-                                            (- yaw))
-                           ))))
+                           (rotation-matrix (- along-z)
+                                            (- along-x)
+                                            (- along-y)
+                           )))))
                (format out "// prefab ~a, position: ~{~a~^, ~} angles: ~{~a~^, ~}~%" (car found) position angles)
                (export-prefab prefab out (m* global-trans transform) prefabs)))))))
    (remove-if-not (lambda (e) (string= (string-downcase (entity-type e)) "prefab")) (prefab-entities self))))
 
 
+;; item types:
+;; Burst Gun 0
+;; Shotgun 1
+;; Grenade Launcher 2
+;; Plasma Rifle 3
+;; Rocket Launcer 4
+;; Ion Cannon 5
+;; Bolt Rifle 6
+;; Stake Gun 7
+;; 5 Health 40
+;; 25 Health 41
+;; 50 Health 42
+;; 100 Health 43
+;; 5 Armor 50
+;; Light Armor 51
+;; Medium Armor 52
+;; Heavy Armor 53
+;; Quad Damage 60
 (defmethod export-spawns ((self reflex-map) out global-trans)
   (format out "// spawns~%")
   (with-slots (entities) (map-global-prefab self)
