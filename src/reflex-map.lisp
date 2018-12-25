@@ -673,32 +673,39 @@ TYPE could be one of either:
 
 
 (defmethod export-lights ((self reflex-map) out global-trans)
-;;   (format out "// lights~%")
-;;   (with-slots (entities) (map-global-prefab self)
-;;     (mapc
-;;      (lambda (ent)
-;;        (let ((position (find-entity-property ent "position"))
-;;              (angles (find-entity-property ent "angles")))
-;;          (when position
-;;            (let ((p
-;;                    (m* global-trans
-;;                        ;; for info_player_start the hbox is defined as the following in TrenchBroom:
-;;                        ;; @baseclass size(-16 -16 -24, 16 16 32) color(0 255 0) = PlayerClass []
-;;                        ;; therefore we must offset spawn point
-;;                        ;; by 24 units
-;;                        (v+ (vec 0 0 24 0)
-;;                            (position-vector position :4d t)))))
-;;              (format out "{
-;; \"classname\" \"info_player_deathmatch\"~%")
-;;              (format out "\"origin\" ")
-;;              (format out "\"~d ~d ~d\"~%" (vx p) (vy p) (vz p))
-;;              (when angles
-;;                ;; in TrenchBroom only one angle supported - yaw
-;;                (format out "\"angle\" ")
-;;                (format out "\"~a\"~%" (+ (car angles) 180)))
-;;            (format out "}~%")))))
-;;      (remove-if-not (lambda (e) (string= (string-downcase (entity-type e)) "playerspawn")) entities))
-    (values))
+  (format out "// lights~%")
+  (let ((light-sources (alist-hash-table
+                        '(("industrial/lights/light_rnd" . "light_globe")
+                          ("industrial/lights/light_fluorescent" . "light_flame_large_yellow")
+                          ("industrial/lights/light_step_sml" . "light")) :test #'equalp)))
+    (with-slots (entities) (map-global-prefab self)
+      (mapc
+       (lambda (ent)
+         (let* ((position (find-entity-property ent "position"))
+                (effect-type (car (find-entity-property ent "effectName"))))
+           (when position
+             (let ((p
+                     (m* global-trans
+                         ;; for info_player_start the hbox is defined as the following in TrenchBroom:
+                         ;; @baseclass size(-16 -16 -24, 16 16 32) color(0 255 0) = PlayerClass []
+                         ;; therefore we must offset spawn point
+                         ;; by 24 units
+                         (v+ (vec 0 0 24 0)
+                             (position-vector position :type :vec4)))))
+               (format out "{
+\"classname\" \"~a\"~%" (gethash effect-type light-sources))
+               (format out "\"origin\" ")
+               (format out "\"~d ~d ~d\"~%" (vx p) (vy p) (vz p))
+               (format out "}~%")))))
+       (remove-if-not
+        (lambda (e)
+          (let ((effect-type (find-entity-property e "effectName")))
+            (and (string= (string-downcase (entity-type e))
+                          "effect")
+                 (gethash (string-downcase (car effect-type))
+                          light-sources))))
+        entities)))
+    (values)))
 
 
 
