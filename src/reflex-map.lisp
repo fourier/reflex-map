@@ -6,7 +6,7 @@
 (in-package :reflex-map)
 
 ;; Implementation
-(defparameter *version* "0.3")
+(defparameter *version* "0.4")
 
 (defparameter *float-scanner*
   (ppcre:create-scanner "-?[0-9]+([.][0-9]+([Ee][0-9]+)?)"))
@@ -545,7 +545,7 @@ Angles are along z axis, x axis and y axis"
       ;; make sure the normal is in positive direction
       (when (> 0 new-angle)
         (rotatef (nth 1 new-vertices) (nth 2 new-vertices)))
-      (mapc (lambda (v) (format out "( ~a ~a ~a ) " (vx v) (vy v) (vz v))) new-vertices))))
+      (mapc (lambda (v) (format out "( ~f ~f ~f ) " (vx v) (vy v) (vz v))) new-vertices))))
 
 
 
@@ -620,7 +620,7 @@ TYPE could be one of either:
                                             (- along-x)
                                             (- along-y)
                            )))))
-               (format out "// prefab ~a, position: ~{~a~^, ~} angles: ~{~a~^, ~}~%" (car found) position angles)
+               (format out "// prefab ~a, position: ~{~a~^, ~} angles: ~{~f~^, ~}~%" (car found) position angles)
                (export-prefab prefab out (m* global-trans transform) prefabs)))))))
    (remove-if-not (lambda (e) (string= (string-downcase (entity-type e)) "prefab")) (prefab-entities self))))
 
@@ -648,7 +648,7 @@ TYPE could be one of either:
              (format out "\"~d ~d ~d\"~%" (vx p) (vy p) (vz p))
              ;; in TrenchBroom only one angle supported - yaw
              (format out "\"angle\" ")
-             (format out "\"~a\"~%" (- 90 angle))
+             (format out "\"~f\"~%" (- 90 angle))
              (format out "}~%")))))
      (remove-if-not (lambda (e) (string= (string-downcase (entity-type e)) "playerspawn")) entities))
     (values)))
