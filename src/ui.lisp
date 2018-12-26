@@ -68,7 +68,7 @@
         ;; verify what paths are not empty
         (when (and (> (length source-path) 0) (> (length dest-path) 0))
           (enable-interface nil)
-          (convert-reflex-to-qw source-path dest-path)
+          (convert-reflex-to-qw source-path dest-path 0.8)
           (enable-interface t)
           (display-message "Done"))))))
 
