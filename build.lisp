@@ -62,6 +62,8 @@
            "C:/Sources/lisp/reflex-map/reflex-map-converter.exe"
            1
            :interface :capi
+           :icon-file "reflex-map-logo.ico"
+           :registry-path "reflex-map-converter"
          ;:keep-modules t
            :startup-bitmap-file nil))
 

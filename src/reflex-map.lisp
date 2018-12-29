@@ -6,7 +6,7 @@
 (in-package :reflex-map)
 
 ;; Implementation
-(defparameter *version* "0.4")
+(defparameter *version* "0.5")
 
 (defparameter *float-scanner*
   (ppcre:create-scanner "-?[0-9]+([.][0-9]+([Ee][0-9]+)?)"))

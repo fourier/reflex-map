@@ -32,10 +32,15 @@
                           :drop-callback 'on-drop
                           :buttons 
                           '(:browse-file (:image :std-file-open) :ok nil))
+   (z-scale-options option-pane 
+                    :items (list "100" "95" "90" "85" "80" "75" "70")
+                    :selected-item "85"
+                    :title "Z-scale, percents of original")
    (convert-button push-button :text "Convert" :callback 'on-convert-button))
   (:layouts
    (main-layout column-layout '(input-file-edit
                                 output-file-edit
+                                z-scale-options
                                 convert-button)
                 :adjust :center
                 :internal-border 20))
@@ -58,19 +63,27 @@
   (declare (ignore data))           
   (with-slots (input-file-edit
                output-file-edit
-               convert-button) self
+               convert-button
+               z-scale-options) self
     (flet ((enable-interface (enable)
-             (setf (button-enabled convert-button) enable
-                   (text-input-pane-enabled input-file-edit) enable
-                   (text-input-pane-enabled output-file-edit) enable)))
+             (capi:apply-in-pane-process self
+                                         (lambda ()
+                                           (setf (button-enabled convert-button) enable
+                                                 (text-input-pane-enabled input-file-edit) enable
+                                                 (text-input-pane-enabled output-file-edit) enable
+                                                 (simple-pane-cursor self) (if enable nil :wait))))))
       (let ((source-path (text-input-pane-text input-file-edit))
-            (dest-path (text-input-pane-text output-file-edit)))
+            (dest-path (text-input-pane-text output-file-edit))
+            (z-scale (/ (read-from-string (choice-selected-item z-scale-options)) 100.0)))
         ;; verify what paths are not empty
         (when (and (> (length source-path) 0) (> (length dest-path) 0))
-          (enable-interface nil)
-          (convert-reflex-to-qw source-path dest-path 0.8)
-          (enable-interface t)
-          (display-message "Done"))))))
+          (mp:process-run-function "Convert files" nil
+                                   (lambda ()
+                                     (enable-interface nil)
+                                     (convert-reflex-to-qw source-path dest-path z-scale)
+                                     (enable-interface t)
+                                     (apply-in-pane-process self (lambda ()
+                                                                   (display-message "Done"))))))))))
 
 
 (defun on-drop (pane drop-object stage)
