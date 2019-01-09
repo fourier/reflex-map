@@ -17,12 +17,15 @@ Additionally some other entities exported:
 
 - Spawns
 - Some lights, according to the following mapping:
+
   | Reflex light name | Trenchbroom light name |
   | --- | --- |
   | ```industrial/lights/light_rnd``` | ```light_globe``` |
   | ```industrial/lights/light_fluorescent``` | ```light_flame_large_yellow``` |
   | ```industrial/lights/light_step_sml``` | ```light``` |
+
 - Some items exported as well. Supported conversions:
+
   | Reflex item | QW Item |
   | --- | --- |
   | Shotgun | SuperShotGun |
