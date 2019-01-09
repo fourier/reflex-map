@@ -6,8 +6,92 @@
 
 (in-package :reflex-map)
 
+;; shortcut/convenience macro
+(defmacro with-pane-process ((self) &body body)
+  `(capi:apply-in-pane-process ,self
+                              (lambda ()
+                                ,@body)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Settings
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; Implementation is taken from mediaimport project
+(defclass settings ()
+  ((company :reader company
+            :initarg :company
+            :initform "com.github.fourier"
+            :documentation "Company name")
+   (name :reader application-name
+         :initarg :application-name
+         :initform "reflex-map-converter"
+         :documentation "Application name")
+   (version :reader application-version
+            :initarg :application-version
+            :initform *version*
+            :documentation "Application version")
+   (product-symbol :reader product
+    :documentation "A symbol produced from the company name")
+   (settings-path :reader settings
+                  :initform "Settings"
+                  :initarg :settings-path
+                  :documentation "A path to the generic application settings"))
+  (:documentation "Settings class provides application-specific persistence settings"))
+
+
+(defmethod initialize-instance :after ((self settings) &key)
+  "Constructor for SETTINGS class"
+  (with-slots (company name version product-symbol) self
+    (setf version *version*)
+    (setf product-symbol (intern name "KEYWORD"))
+    (setf (sys:product-registry-path product-symbol)
+          (list "Software" company name version))))
+
+
+(defmethod get-value ((self settings) key &optional fallback-value)
+  "Get the value identified by KEY from the storage SELF.
+If FALLBACK-VALUE specified, use this if not found (and update the storage)"
+  (with-slots (product-symbol settings-path) self
+    ;; handle paths like "Presets/Mypreset"
+    (let ((path (split-sequence "/" key)))
+      ;; if single key prepend with "Settings"
+      (if (= 1 (length path))
+          (setf path (list settings-path))
+          ;; otherwise split the path and a key
+          (setf key (car (last path))
+                path (butlast path)))
+      (multiple-value-bind (value result)
+          (lw:user-preference path key :product product-symbol)
+        (cond ((and result value) (values value result))
+              (fallback-value
+               (progn
+                 (setf (lw:user-preference path key :product product-symbol) fallback-value)
+                 (values (lw:user-preference path key :product product-symbol) t)))
+              (t (values nil nil)))))))
+
+
+(defmethod set-value ((self settings) key value)
+  "Set and save the VALUE identified by the KEY in storage SELF."
+  (with-slots (product-symbol settings-path) self
+    (let ((path (split-sequence "/" key)))
+      ;; if single key prepend with "Settings"
+      (if (= 1 (length path))
+          (setf path (list settings-path))
+          ;; otherwise split the path and a key
+          (setf key (car (last path))
+                path (butlast path)))
+      (setf (lw:user-preference path key :product product-symbol) value)
+      value)))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; UI
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
 (define-interface reflex-map-converter-interface ()
-  ()
+  ((settings :initform (make-instance
+                        'settings
+                        :application-name "ReflexMapConverter" :application-version *version*)))
   (:menus
    (application-menu
     "File"
@@ -34,6 +118,7 @@
                           '(:browse-file (:image :std-file-open) :ok nil))
    (z-scale-options option-pane 
                     :items (list "100" "95" "90" "85" "80" "75" "70")
+                    :test-function #'equalp
                     :selected-item "85"
                     :title "Z-scale, percents of original")
    (convert-button push-button :text "Convert" :callback 'on-convert-button))
@@ -55,35 +140,59 @@
 
 
 (defmethod initialize-instance :after ((self reflex-map-converter-interface) &key &allow-other-keys)
+  ;; set window drag-n-droppable, to allow drag-n-drop files[s] from Explorer
   (setf (capi:capi-object-property self 'drag-and-drop-list-keyword) 
-        :filename-list))
+        :filename-list)
+  ;; restore the fields from registry (using settings class)
+  (with-slots (input-file-edit
+               output-file-edit
+               z-scale-options
+               settings) self
+    (macrolet ((get-field-from-settings (field accessor default-value)
+                 ;; shortcut
+                 `(setf (,accessor ,field)
+                        (get-value settings ,(symbol-name field) ,default-value))))
+      (get-field-from-settings input-file-edit text-input-pane-text "")
+      (get-field-from-settings output-file-edit text-input-pane-text "")
+      (get-field-from-settings z-scale-options choice-selected-item "85"))))
 
 
 (defun on-convert-button (data self)
+  "Callback called then the user press Convert button"
   (declare (ignore data))           
   (with-slots (input-file-edit
                output-file-edit
                convert-button
-               z-scale-options) self
+               z-scale-options
+               settings) self
     (flet ((enable-interface (enable)
-             (capi:apply-in-pane-process self
-                                         (lambda ()
-                                           (setf (button-enabled convert-button) enable
-                                                 (text-input-pane-enabled input-file-edit) enable
-                                                 (text-input-pane-enabled output-file-edit) enable
-                                                 (simple-pane-cursor self) (if enable nil :wait))))))
+             ;; enable/disable fields and show/hide busy cursor
+             (with-pane-process (self)
+               (setf (button-enabled convert-button) enable
+                     (text-input-pane-enabled input-file-edit) enable
+                     (text-input-pane-enabled output-file-edit) enable
+                     (simple-pane-cursor self) (if enable nil :wait)))))
       (let ((source-path (text-input-pane-text input-file-edit))
             (dest-path (text-input-pane-text output-file-edit))
             (z-scale (/ (read-from-string (choice-selected-item z-scale-options)) 100.0)))
         ;; verify what paths are not empty
         (when (and (> (length source-path) 0) (> (length dest-path) 0))
-          (mp:process-run-function "Convert files" nil
-                                   (lambda ()
-                                     (enable-interface nil)
-                                     (convert-reflex-to-qw source-path dest-path z-scale)
-                                     (enable-interface t)
-                                     (apply-in-pane-process self (lambda ()
-                                                                   (display-message "Done"))))))))))
+          ;; ok, now we can save the values to registry
+          (macrolet ((set-field-from-settings (field accessor)
+                       `(set-value settings ,(symbol-name field) (,accessor ,field))))
+            (set-field-from-settings input-file-edit text-input-pane-text)
+            (set-field-from-settings output-file-edit text-input-pane-text)
+            (set-field-from-settings z-scale-options choice-selected-item)
+            ;; and run the computation in separate thread
+            (mp:process-run-function "Convert files" nil
+                                     (lambda ()
+                                       (enable-interface nil)
+                                       ;; the main job done by this function
+                                       (convert-reflex-to-qw source-path dest-path z-scale)
+                                       (enable-interface t)
+                                       (with-pane-process (self)
+                                         (display-message "Done"))))))))))
+                                       
 
 
 (defun on-drop (pane drop-object stage)

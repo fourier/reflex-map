@@ -15,6 +15,10 @@
 
 (in-package :reflex-map-test)
 
+;; turn off ansi colors in report output
+(setf prove.color:*enable-colors* nil)
+;; change type of the reporter to Test Anything Protocol
+(setf prove:*default-reporter* :tap)
 
 ;; NOTE: To run this test file, execute `(asdf:test-system :reflex-map)' in your Lisp.
 

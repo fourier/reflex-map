@@ -6,32 +6,85 @@
 (in-package :reflex-map)
 
 ;; Implementation
-(defparameter *version* "0.5")
+;;
+;; Implementation details
+;; The main job is done by the function convert-reflex-to-qw (in-filename out-filename &optional (z-scale 1))
+;; Usage example:
+
+;; (reflex-map:convert-reflex-to-qw "my-reflex-map.map" "my-qw-map.map" 0.85)
+;;
+;; The implementation consists of 2 phases:
+;; 1. parsing the Reflex Map via parse-reflex-map-file function to the reflex-map class instance
+;; 2. creating the output TrenchBroom map via create-qw-map-file function.
+;;
+;; Parsing
+;; Parsing is done via typicall lexing/parsing scheme.
+;; As the Reflex map format is a text file with indentation-based blocking similar to Python,
+;; the lexing is done on per-line basis. Main function to perform lexing of the line is
+;; tokenize-string. This function is called iteratively from the file lexer reflex-map-stream-lexer,
+;; which also counts indents and inserts "dedent" artificial token the the indentation has been changed
+;; (block closed)
+;; The parser is implemented using CL-YACC library. In order to convert tokens list to the lexer function
+;; supported by CL-YACC, the reflex-list-lexer is added (adapted from documentation for CL-YACC) which converts
+;; a list to a closure of a function without arguments which returs 1 token on each call.
+;; The grammar is defined in the *reflex-map-parser* variable via yacc:define-parser macro.
+;; The grammar is defined in a self-explanatory EBNF-style following the format of the Reflex map files.
+;; Upon parsing the objects on necessary levels are created and assembled, and at the end
+;; the fresh reflex-map class instance is created. The coordinates got shifted while creating the 'vertex'
+;; class instances. This grammar is used in parse-reflex-map-file function which finally will return the instance of
+;; reflex-map class.
+;;
+;; Generating
+;; Having the parsed data in the reflex-map class instance, we can generate the output. There are 5 steps to perform
+;; here in the create-qw-map-file function:
+;; 1) Define a global transformation matrix which will be applied to all coordinates.
+;;    This global transformation matrix is perfoming rescaling in Z direction right now using 3d-matrices library.
+;; 2) Function export-prefab, to recursively export prefabs, starting from "global" prefab, applying transformations
+;;    along the way. This is done via first exporting the prefab (brushes) themselves, then go through the list of
+;;    prefabs "embedded" into it exporting them recursively (using the same export-prefab function).
+;;    Every "sub"-prefab is defined via its name (hence we can find corresponding prefab is the global list),
+;;    its position and angles. But prefab in a global list of prefabs is defined in own coordinates.
+;;    Therefore we have to apply necessary transformations before exporting brushes.
+;; 3) Convert player spawns to QW format and export them
+;; 4) Convert lights to QW format and export
+;; 5) Convert some items and export them - ammo, health, armors, weapons
+;;
+
+
+(defparameter *version* "0.6"
+  "The software version to be used in UI and in help")
 
 (defparameter *float-scanner*
-  (ppcre:create-scanner "-?[0-9]+([.][0-9]+([Ee][0-9]+)?)"))
+  (ppcre:create-scanner "-?[0-9]+([.][0-9]+([Ee][0-9]+)?)")
+  "Floating point numbers scanner (including scientific format")
 
 (defparameter *int-scanner*
-  (ppcre:create-scanner "-?[0-9]+"))
+  (ppcre:create-scanner "-?[0-9]+")
+  "Integers scanner (including negative)")
 
 (defparameter *hex-scanner*
-  (ppcre:create-scanner "0[xX][0-9a-fA-F]+"))
+  (ppcre:create-scanner "0[xX][0-9a-fA-F]+")
+  "Numbers in hex format scanner")
 
 
 (defclass reflex-map ()
   ((version :initarg :version :initform nil :reader map-version)
    (prefabs :initarg :prefabs :initform nil :reader map-prefabs)
-   (global-prefab :initarg :global :initform nil :reader map-global-prefab)))
+   (global-prefab :initarg :global :initform nil :reader map-global-prefab))
+  (:documentation "The parsed data from the Reflex map file"))
 
 (defclass prefab-base ()
   ((entities :initarg :entities :initform nil :reader prefab-entities)
-   (brushes :initarg :brushes :initform nil :reader prefab-brushes)))
+   (brushes :initarg :brushes :initform nil :reader prefab-brushes))
+  (:documentation "The base class for prefabs, containing both enities list and brushes"))
 
 (defclass normal-prefab (prefab-base)
-  ((name :initarg :name :initform "" :reader prefab-name)))
+  ((name :initarg :name :initform "" :reader prefab-name))
+  (:documentation "Named prefab (used in global geometry prefab and other prefabs"))
 
 (defclass global-prefab (prefab-base)
-  ())
+  ()
+  (:documentation "Global(main) prefab - containing the actual map geometry"))
     
 
 (defclass entity ()
@@ -63,7 +116,8 @@
    (rotation :initarg :rotation :initform 0 :type 'float :reader face-rotation)
    (vertices :initarg :vertices :initform nil :reader face-vertices :documentation "an array of indexes of corresponding ver~tices")
    (model-color :initarg :model-color :initform "" :type 'string :reader face-model-color)
-   (model-name :initarg :model-name :initform "" :type 'string :reader face-model-name)))
+   (model-name :initarg :model-name :initform "" :type 'string :reader face-model-name))
+  (:documentation "The parsed face information"))
 
 
 (defmethod print-object :after ((self entity) stream)
@@ -79,6 +133,7 @@
   (with-slots (x y z) self
     (format stream "( ~a ~a ~a )" x y z)))
 
+
 (defmethod print-inverse-vertex ((self vertex) stream)
   "Print the contents of the VERTEX"
   (with-slots (x y z) self
@@ -91,6 +146,7 @@
   "Print the contents of the VERTEX"
   (print-vertex self stream))
 
+
 (defmethod print-object :after ((self brush) stream)
   "Print the contents of the BRUSH"
   nil)
@@ -100,7 +156,10 @@
 ;;;     (format stream "Faces:~%")
 ;;;     (dolist (f faces) (print-object f stream))))
 
+
 (defmethod find-entity-property ((self entity) name)
+  "Returns the list of properties for the entity by the NAME provided.
+The property name is excluded"
   (when-let (found 
              (find-if (lambda (prop)
                         (string= (string-downcase (second prop))
@@ -109,49 +168,64 @@
     (cddr found)))
 
 
-
 (defun make-vertex (x y z)
+  "Constructor for the VERTEX class instances"
   (make-instance 'vertex :x x :y y :z z))
 
+
 (defmethod vertex-coords ((self vertex))
+  "Return the simple list of coordinates of the vertex"
   (with-slots (x y z) self
     (list x y z)))
   
 
 (defun read-windows-line (in)
+  "Read the line from the stream.
+Return the line without the trailing newline characters"
   (when-let (line (read-line in nil))
     (string-right-trim '(#\Newline #\Return) line)))
 
 
 (defun count-indent (line &optional (indent-char #\tab))
+  "Calculate the number of indentation characters in the beginning of the line"
   (loop for c across line
         for i below (length line)
         while (char= c indent-char)
         finally (return i)))
 
 (defun if-indent (line count)
+  "Determine if the LINE has COUNT indentation characters"
   (and line
        (= (count-indent line) count)))
 
 (defun parse-and-trim (line)
+  "Return a list of words from the string line"
   (split-sequence:split-sequence #\Space (string-trim '(#\Tab #\Space) line)))
 
 
-(defmacro def-is-fun (type scanner-var)
-  (let ((fun-name (intern (string-upcase (concatenate 'string "is-" (symbol-name type))))))
-  `(progn
-     (defun ,fun-name (token)
-       (multiple-value-bind (start end)
-           (ppcre:scan ,scanner-var token)
-         (and start end
-              (= (- end start) (length token))))))))
-
-(def-is-fun float *float-scanner*)
-(def-is-fun int   *int-scanner*)
-(def-is-fun hex   *hex-scanner*)
+(macrolet ((def-is-fun (type scanner-var)
+             "Create a is- function (which receives a string as an argument).
+The TYPE and the regexp SCANNER-VAR used to create a function name and a
+matcher correspondingly"
+             (let ((fun-name (intern (string-upcase (concatenate 'string "is-" (symbol-name type))))))
+               `(progn
+                  (defun ,fun-name (token)
+                    (multiple-value-bind (start end)
+                        (ppcre:scan ,scanner-var token)
+                      (and start end
+                           (= (- end start) (length token)))))))))
+  (def-is-fun float *float-scanner*)
+  (def-is-fun int   *int-scanner*)
+  (def-is-fun hex   *hex-scanner*))
   
     
 (defun tokenize-string (line)
+  "Tokenize the given line (without newline character at the end).
+This function produces the list of tokens:
+- float number
+- integers
+- symbols if any of them in the symbols list
+- strings otherwise"
   (mapcar (lambda (token)
             (cond ((or (is-float token)
                        (is-int token))
@@ -163,13 +237,20 @@
 
 
 (defun reflex-list-lexer (tokens)
+  "Takes the list of tokens and returns a closure lexer.
+The closure will take no arguments and on each call will return 2 values (values terminal value)
+Here the terminal will be the symbol and value the actual value (if applicable) or the symbol again"
   #'(lambda ()
       (let ((value (pop tokens)))
         (if (null value)
+            ;; terminator
             (values nil nil)
             (let ((terminal
-                    (cond ((and (stringp value) (is-hex value)) 'hex)
+                   ;; first check on hex as the hex is a subset of a string
+                    (cond ((and (stringp value) (is-hex value)) 'hex) 
                           ((stringp value) 'string)
+                          ;; integer strings are subsets of float strinngs,
+                          ;; so check them first
                           ((integerp value) 'integer)
                           ((floatp value) 'float)
                           ;; value of symbol is the symbol itself
@@ -179,6 +260,10 @@
 
 
 (defun reflex-map-stream-lexer (in-stream &optional (indent-char #\Tab))
+  "The main lexer function for Reflex map format.
+As Reflex Map format is indentation-based, so the lexer will perform
+counting of the indentations and if it is changed insert either 'indent'
+or 'dedent'(artificial) terminals to the output."
   (loop with stack = (list 0)
         with result = nil
         for line = (read-windows-line in-stream)
@@ -207,23 +292,27 @@
 
 
 (defun reflex-map-lexer (filename)
-  ;; list of tokens:
-  ;; tab, string, newline
+  "Lexer for the Reflex Map file FILENAME"
   (with-open-file (in filename :if-does-not-exist nil)
     (reflex-map-stream-lexer in)))
 
 
 (defun prefab-from-entries (name entries)
+  "Split the list of entries to entities and brushes and create a named prefab object.
+This function is used in parser"
   (let ((entities-list (remove-if (lambda (x) (eql (type-of x) 'brush)) entries))
         (brushes-list (remove-if (lambda (x) (eql (type-of x) 'entity)) entries)))
     (make-instance 'normal-prefab :name name :entities entities-list :brushes brushes-list)))
 
 (defun global-from-entries (entries)
+  "Split the list of entries to entities and brushes and create a global prefab object.
+This function is used in parser"  
   (let ((entities-list (remove-if (lambda (x) (eql (type-of x) 'brush)) entries))
         (brushes-list (remove-if (lambda (x) (eql (type-of x) 'entity)) entries)))
     (make-instance 'global-prefab :entities entities-list :brushes brushes-list)))
 
 (defun create-reflex-map (version prefabs)
+  "Create an instance of the reflex-map class by the given prefabs list and version"
   (let ((global (find-if (lambda (x) (eql (type-of x) 'global-prefab)) prefabs))
         (only-prefabs (remove-if (lambda (x) (eql (type-of x) 'global-prefab)) prefabs)))
     (make-instance 'reflex-map :version version
@@ -350,12 +439,16 @@
                                           (cons i v-l))))
 
   (models nil hex string (hex string)))
+;; end of grammar definition
+
 
 (defun parse-reflex-map-file (filename)
+  "Return the reflex-map object from the parsed file.
+The main function to parse the Reflex map file."
   (yacc:parse-with-lexer (reflex-list-lexer (reflex-map-lexer filename)) *reflex-map-parser*))
 
 
-;; math
+;; Mathematics
 
 (defgeneric plane-equation (v1 v2 v3)
   (:documentation
@@ -376,6 +469,7 @@ D = - x1 y2 z3 + x1 y3 z2 + x2 y1 z3 - x2 y3 z1 - x3 y1 z2 + x3 y2 z1"))
 
 
 (defun plane-equation-impl (x1 y1 z1 x2 y2 z2 x3 y3 z3)
+  "Actual calculation of the plane equation"
   (let ((A (- (+ (* y1 z2) (* y2 z3) (* y3 z1))
               (+ (* y1 z3) (* y2 z1) (* y3 z2))))
         (B (- (+ (* x1 z3) (* x2 z1) (* x3 z2))
@@ -385,8 +479,10 @@ D = - x1 y2 z3 + x1 y3 z2 + x2 y1 z3 - x2 y3 z1 - x3 y1 z2 + x3 y2 z1"))
         (D (- (+ (* x1 y3 z2) (* x2 y1 z3) (* x3 y2 z1))
               (+ (* x1 y2 z3) (* x2 y3 z1) (* x3 y1 z2)))))
     (values A B C D)))
-  
+
+
 (defmethod plane-equation ((v1 vertex) (v2 vertex) (v3 vertex))
+  "Calculate plane equation parameters by given 3 vertexes"
   (let* ((x1 (vertex-x v1))
          (x2 (vertex-x v2))
          (x3 (vertex-x v3))
@@ -398,7 +494,9 @@ D = - x1 y2 z3 + x1 y3 z2 + x2 y1 z3 - x2 y3 z1 - x3 y1 z2 + x3 y2 z1"))
          (z3 (vertex-z v3)))
     (plane-equation-impl x1 y1 z1 x2 y2 z2 x3 y3 z3)))
 
+
 (defmethod plane-equation ((v1 vec4) (v2 vec4) (v3 vec4))
+  "Calculate plane equation parameters by given 3 vectors"
   (let* ((x1 (vx v1))
          (x2 (vx v2))
          (x3 (vx v3))
@@ -410,7 +508,9 @@ D = - x1 y2 z3 + x1 y3 z2 + x2 y1 z3 - x2 y3 z1 - x3 y1 z2 + x3 y2 z1"))
          (z3 (vz v3)))
     (plane-equation-impl x1 y1 z1 x2 y2 z2 x3 y3 z3)))
 
+
 (defmethod plane-equation ((v1 list) (v2 list) (v3 list))
+  "Calculate plane equation parameters by given 3 lists of coordinates"
   (let* ((x1 (first v1))
          (x2 (first v2))
          (x3 (first v3))
@@ -424,6 +524,8 @@ D = - x1 y2 z3 + x1 y3 z2 + x2 y1 z3 - x2 y3 z1 - x3 y1 z2 + x3 y2 z1"))
 
 
 (defun create-flip-transform (brushes)
+  "Create a horizontal flip matrix transformation
+from the list of brushes"
   ;; find center
   (let* ((center
            (loop for b in brushes
@@ -477,8 +579,6 @@ D = - x1 y2 z3 + x1 y3 z2 + x2 y1 z3 - x2 y3 z1 - x3 y1 z2 + x3 y2 z1"))
     ;;         (second center) (third center))
     (m* (m* trans+center mirror-matrix-y) trans-center)))
   
-           
-
 
 (defun rotation-matrix (along-z along-x along-y)
   "Rotation matrix for the list of 3 angles given in degrees.
@@ -511,11 +611,42 @@ Angles are along z axis, x axis and y axis"
       (m* (m* x y) z))))
 
 
+(defun position-vector (attrs &key (type :vertex))
+  "Convert list of floats (coordinates in Reflex coordinate
+system to appropriate vector depending of keyword :TYPE.
+The coordinates swap is also performed.
+TYPE could be one of either:
+:VERTEX - returns an instance of VERTEX class
+:VEC - returns an instance of vec3
+:VEC4 - returns an instance of vec4"
+  ;; transformation : x z y -> x y z
+  (let ((x (first attrs))
+        (y (third attrs))
+        (z (second attrs)))
+    (case type
+      (:vertex (make-vertex x y z))
+      (:vec (vec x y z))
+      (:vec4 (vec4 x y z 1)))))
+
+
+;; Exporting functions
+
 (defun export-face (points transform out)
+  "Export face to TB format.
+POINTS is the list of points constituting face, where the point
+is the list of coordinates.
+During export we apply the transformation matrix TRANSFORM (mat 4x4)
+to the coordinates.
+OUT is the output stream."
   ;; take first 3 points from the face
   (let* ((vertices  (subseq points 0 3))
+         ;; calculate the normal to the plane constructed from the
+         ;; first 3 points
          (normal (multiple-value-list 
                   (apply #'plane-equation vertices)))
+         ;; calculate the cos of the angle between 2 vectors
+         ;; on a plane and normal, to determine the orientation
+         ;; by the sign of the angle
          (angle (v. 
                  (vc (v- (apply #'vec3 (third vertices))
                          (apply #'vec3 (first vertices)))
@@ -524,6 +655,7 @@ Angles are along z axis, x axis and y axis"
                  (apply #'vec3 (subseq normal 0 3)))))
     ;; make sure the normal is in positive direction
     (when (> 0 angle)
+      ;; if not, swap the vertices
       (rotatef (nth 1 vertices) (nth 2 vertices)))
     ;; apply transformation
     (let* ((new-vertices
@@ -544,29 +676,32 @@ Angles are along z axis, x axis and y axis"
               (apply #'vec3 (subseq new-normal 0 3)))))
       ;; make sure the normal is in positive direction
       (when (> 0 new-angle)
+        ;; if not, swap the vertices 
         (rotatef (nth 1 new-vertices) (nth 2 new-vertices)))
+      ;; finally output all transformed vertices
       (mapc (lambda (v) (format out "( ~f ~f ~f ) " (vx v) (vy v) (vz v))) new-vertices))))
 
 
-
-
-  
-
 (defmethod export-brush ((self brush) transform out)
+  "Export brush SELF to the stream OUT applying matrix TRANSFORM"
   (with-slots (vertices faces) self
     (format out "{~%")
     (dolist (f faces)
+      ;; gather the points into the list of coordinates
       (let ((points
               (loop for vert-idx in (face-vertices f)
                     for coords = (vertex-coords (elt vertices vert-idx))
                     collect coords into vert-coords
                     finally (return vert-coords))))
+        ;; export face applying transformation
         (export-face points transform out))
+      ;; default face texture - just rock
       (format out " rock4_1 0 0 0 1 1~%"))
     (format out "}~%")))
 
 
 (defmethod export-brushes ((self prefab-base) out transform)
+  "Export all brushes from prefab SELF applying matrix TRANSFORM to the stream OUT"
   (with-slots (brushes) self
     (loop for br in brushes
           for i below (length brushes)
@@ -575,57 +710,48 @@ Angles are along z axis, x axis and y axis"
              (export-brush br transform out))))
 
 
-(defun position-vector (attrs &key (type :vertex))
-  "Convert list of floats (coordinates in Reflex coordinate
-system to appropriate vector depending of keyword :TYPE.
-The coordinates swap is also performed.
-TYPE could be one of either:
-:VERTEX - returns an instance of VERTEX class
-:VEC - returns an instance of vec3
-:VEC4 - returns an instance of vec4"
-  ;; transformation : x z y -> x y z
-  (let ((x (first attrs))
-        (y (third attrs))
-        (z (second attrs)))
-    (case type
-      (:vertex (make-vertex x y z))
-      (:vec (vec x y z))
-      (:vec4 (vec4 x y z 1)))))
-        
-
-
-
 (defmethod export-prefab ((self prefab-base) out
                           global-trans prefabs)
-  ;; export global
+  "Export prefab to the stream OUT applying matrix GLOBAL-TRANS to all coordinates.
+PREFABS is a list of named prefabs is the file. So if the prefab is using another
+prefabs, it is searched in this list."
+  ;; 1. export brushes
   (export-brushes self out global-trans)
-  ;; export prefabs
+  ;; 2. export prefabs if any
   (mapc
+   ;; export every prefab entity
    (lambda (ent)
+     ;; get all the prefab entity properties - name, position, angles
      (when-let (found
                 (find-entity-property ent "prefabName"))
        (let ((position (find-entity-property ent "position"))
-             (angles (find-entity-property ent "angles")))
-         (when-let (prefab (find-if (lambda (p) (string= (prefab-name p) (car found))) prefabs))
+             (angles (find-entity-property ent "angles"))
+             (name (car found)))
+         ;; find corresponding prefab in in the list provided
+         (when-let (prefab (find-if (lambda (p) (string= (prefab-name p) name)) prefabs))
+           ;; sometimes prefabs are added without position, we ignore them (no where to place)
            (when position
+             ;; translation matrix out of position
              (let ((transform (mtranslation (position-vector position :type :vec))))
+               ;; if angles present, multiply transformation matrix by the rotation
                (when angles
                  ;; angles are in the following format:
-                 ;; considering 
                  (destructuring-bind (along-z along-x along-y)
                      angles
                    (setf transform
                          (m* transform
                            (rotation-matrix (- along-z)
                                             (- along-x)
-                                            (- along-y)
-                           )))))
-               (format out "// prefab ~a, position: ~{~a~^, ~} angles: ~{~f~^, ~}~%" (car found) position angles)
+                                            (- along-y))))))
+               (format out "// prefab ~a, position: ~{~a~^, ~} angles: ~{~f~^, ~}~%" name position angles)
                (export-prefab prefab out (m* global-trans transform) prefabs)))))))
+   ;; the list of prefab entities for current prefab
    (remove-if-not (lambda (e) (string= (string-downcase (entity-type e)) "prefab")) (prefab-entities self))))
 
 
 (defmethod export-spawns ((self reflex-map) out global-trans)
+  "Export spawn entities from parsed Reflex map SELF to the stream OUT.
+Applying transformation matrix GLOBAL-TRANS to the coordinates"
   (format out "// spawns~%")
   (with-slots (entities) (map-global-prefab self)
     (mapc
@@ -654,9 +780,11 @@ TYPE could be one of either:
     (values)))
 
 
-
-
 (defmethod export-lights ((self reflex-map) out global-trans)
+  "Export possible lights from the parsed Reflex Map. Only the following lights supported:
+industrial/lights/light_rnd -> light_globe
+industrial/lights/light_fluorescent -> light_flame_large_yellow
+industrial/lights/light_step_sml -> light"
   (format out "// lights~%")
   (let ((light-sources (alist-hash-table
                         '(("industrial/lights/light_rnd" . "light_globe") ;; z: -8
@@ -714,6 +842,8 @@ TYPE could be one of either:
 ;; plasma ammo 23 
 ;; bolt ammo 26
 (defmethod export-items ((self reflex-map) out global-trans)
+  "Export some of pickup items from the parsed Reflex map SELF.
+See the mapping below which items are actually supported"
   (format out "// pickups~%")
   (let ((pickup-types (alist-hash-table
                         '((1 . "weapon_supershotgun") ;; shotgun
@@ -731,7 +861,6 @@ TYPE could be one of either:
                           (41 . "item_health") ;; ?? 25 "spawnflags" "1"
                           (42 . "item_health") ;; ?? 50 "spawnflags" "0"
                           (43 . "item_health") ;; "spawnflags" "2"
-
                           (51 . "item_armor1")
                           (52 . "item_armor2")
                           (53 . "item_armorInv")))))
@@ -767,8 +896,9 @@ TYPE could be one of either:
     (values)))
 
 
-
 (defmethod create-qw-map-file ((self reflex-map) filename &optional (scales (list 1 1 1)))
+  "Export parsed Reflex map SELF to the TB format file FILENAME.
+SCALES is a list of scale transformations: along x, y, z axis."
   (with-open-file (out filename :direction :output :if-exists :supersede)
     (format out "// Game: Quake
 // Format: Standard
@@ -778,38 +908,22 @@ TYPE could be one of either:
 \"wad\" \"C:/q1mapping/wads/START.WAD\"~%")
     ;; get the global transformation matrix
     (let ((global-trans  (nmscale (meye 4) (apply #'vec scales))))
-;;      (write-matrix global-trans t)
-      ;; recursively export prefabs
+      ;; recursively export prefabs/geometry
       (export-prefab (map-global-prefab self) out
                      global-trans (map-prefabs self))
       (format out "}~%")
+      ;; export everything else
       (export-spawns self out global-trans)
       (export-lights self out global-trans)
       (export-items  self out global-trans))))
 
 
-
+;; The application main function
 (defun convert-reflex-to-qw (in-filename out-filename &optional (z-scale 1))
+  "Parse the Reflex Map file IN-FILENAME and export the TrenchBroom supported file OUT-FILENAME.
+The Z-SCALE specifies the multiplier for the height of objects"
   (when-let ((map (parse-reflex-map-file in-filename)))
     (create-qw-map-file map out-filename (list 1 1 z-scale))))
 
-
-
-;;;;;;;;;;;; Application entry point ;;;;;;;;;;;;
-
-
-(defun usage (name)
-  (format t "Usage: ~a input-file output-file [z-scale=1]~%there input-file is a Reflex Arena Map (.map) file, output-file - generated Quake1 .map file~%and optional 3rd argument specifies floating point z-scale of the converted map (1 is for 100%) which is default" name))
-
-(defun main(&optional argv)
-  (if (and (/= (length argv) 3)
-           (/= (length argv) 4))
-      (usage (car argv))
-      (let ((from (second argv))
-            (to (third argv)))
-        (convert-reflex-to-qw from to
-                              (if (= (length argv) 4)
-                                  (read-from-string (fourth argv))
-                                  1.0)))))
 
 

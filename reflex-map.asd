@@ -17,7 +17,8 @@
                 :components
                 ((:file "package")
                  (:file "reflex-map")
-                 #+lispworks(:file "ui"))))
+                 #+lispworks(:file "ui")
+                 #-lispworks(:file "cmdline"))))
   :description ""
   :long-description
   #.(with-open-file (stream (merge-pathnames
