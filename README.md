@@ -49,4 +49,5 @@ Additionally some other entities exported:
 
 ## Installation
 Download Windows executable from [Releases page](https://github.com/fourier/reflex-map/releases)
-None - the archives in releases contain executable.
+
+The archives in releases contain executable.
