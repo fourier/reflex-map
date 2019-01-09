@@ -48,4 +48,5 @@ Additionally some other entities exported:
   | Red armor | Red armor |
 
 ## Installation
+Download Windows executable from [Releases page](https://github.com/fourier/reflex-map/releases)
 None - the archives in releases contain executable.
