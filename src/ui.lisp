@@ -101,7 +101,7 @@ If FALLBACK-VALUE specified, use this if not found (and update the storage)"
         (lambda ()
           (display-message-on-screen
            (convert-to-screen nil)
-           "Reflex Arena -> Quake 1 Map Converter ~a~%Copyright (c) Alexey Veretennikov(fourier) 2018" *version*))
+           "Reflex Arena -> Quake 1 Map Converter ~a~%Copyright (c) Alexey Veretennikov(fourier) 2018-2019" *version*))
         :callback-type :none))))))
   (:panes
    (input-file-edit text-input-choice 
