@@ -121,11 +121,32 @@ If FALLBACK-VALUE specified, use this if not found (and update the storage)"
                     :test-function #'equalp
                     :selected-item "85"
                     :title "Z-scale, percents of original")
+   (generate-options-panel check-button-panel
+                           :visible-max-width nil
+                           :visible-max-height nil
+                           :items '((:round-to-integers . "Round coordinates to integers")
+                                    (:export-lightsources . "Export light sources")
+                                    (:export-items . "Export items")
+                                    (:export-spawns . "Export spawns"))
+                           :print-function #'cdr
+                           :selection-callback (rcurry #'options-panel-callback t)
+                           :retract-callback (rcurry #'options-panel-callback nil)
+                           ;; used to compare items. first argument is the supplied by
+                           ;; user's function value, i.e. :round-to-integers, second
+                           ;; is the value from the :items, i.e. (:export-items . "Export items")
+                           :test-function (lambda (x y) (eql x (car y)))
+                           :layout-class 'column-layout
+                           :layout-args '(:adjust :right ;;:internal-border 20
+                                          :uniform-size-p t))
    (convert-button push-button :text "Convert" :callback 'on-convert-button))
   (:layouts
+   (generate-options-layout column-layout
+                            '(z-scale-options generate-options-panel)
+                            :title "Generating options"
+                            :title-position :frame)
    (main-layout column-layout '(input-file-edit
                                 output-file-edit
-                                z-scale-options
+                                generate-options-layout
                                 convert-button)
                 :adjust :center
                 :internal-border 20))
@@ -147,14 +168,38 @@ If FALLBACK-VALUE specified, use this if not found (and update the storage)"
   (with-slots (input-file-edit
                output-file-edit
                z-scale-options
-               settings) self
+               settings
+               generate-options-panel) self
     (macrolet ((get-field-from-settings (field accessor default-value)
                  ;; shortcut
                  `(setf (,accessor ,field)
                         (get-value settings ,(symbol-name field) ,default-value))))
       (get-field-from-settings input-file-edit text-input-pane-text "")
       (get-field-from-settings output-file-edit text-input-pane-text "")
-      (get-field-from-settings z-scale-options choice-selected-item "85"))))
+      (get-field-from-settings z-scale-options choice-selected-item "85"))
+    ;; fill the values for options checkboxes
+    (let (options-selection)
+      ;; shortcut
+      (macrolet ((set-option (var keyword)
+                   `(progn
+                      (setf ,var (get-value settings (symbol-name ,keyword) ,var))
+                      (when ,var
+                        (push ,keyword options-selection)))))
+        (set-option *round-to-integers* :round-to-integers)
+        (set-option *export-lightsources* :export-lightsources)
+        (set-option *export-items* :export-items)
+        (set-option *export-spawns* :export-spawns))
+      (setf (choice-selected-items generate-options-panel) options-selection))))
+
+
+(defun options-panel-callback (data interface enabled)
+  (declare (ignore interface))
+  (let ((option (car data)))
+    (case option
+      (:round-to-integers (setf *round-to-integers* enabled))
+      (:export-lightsources (setf *export-lightsources* enabled))
+      (:export-items (setf *export-items* enabled))
+      (:export-spawns (setf *export-spawns* enabled)))))
 
 
 (defun on-convert-button (data self)
@@ -183,6 +228,10 @@ If FALLBACK-VALUE specified, use this if not found (and update the storage)"
             (set-field-from-settings input-file-edit text-input-pane-text)
             (set-field-from-settings output-file-edit text-input-pane-text)
             (set-field-from-settings z-scale-options choice-selected-item)
+            (set-value settings (symbol-name :round-to-integers) *round-to-integers*)
+            (set-value settings (symbol-name :export-items) *export-items*)
+            (set-value settings (symbol-name :export-lightsources) *export-lightsources*)
+            (set-value settings (symbol-name :export-spawns) *export-spawns*)
             ;; and run the computation in separate thread
             (mp:process-run-function "Convert files" nil
                                      (lambda ()
@@ -208,6 +257,12 @@ If FALLBACK-VALUE specified, use this if not found (and update the storage)"
                          drop-object pane keyword)))
          (with-slots (input-file-edit) pane
            (setf (text-input-pane-text input-file-edit) (car filenames))))))))
+
+
+(defmethod setting-selected ((self reflex-map-converter-interface) option)
+  "Check if the settings checkbox selected."
+  (when-let (selected (mapcar #'car (choice-selected-items (slot-value self 'generate-options-panel))))
+    (member option selected)))
 
 
 (defun main-ui ()

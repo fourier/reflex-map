@@ -51,8 +51,22 @@
 ;;
 
 
-(defparameter *version* "0.6"
+(defparameter *version* "0.7"
   "The software version to be used in UI and in help")
+
+(defparameter *round-to-integers* nil
+  "Determine if the floating coordinates values should be
+rounded to nearest integer in export process")
+
+(defparameter *export-lightsources* t
+  "Determine if the light sources should be exported to QW map")
+
+(defparameter *export-items* t
+  "Determine if the items should be exported to QW map")
+
+(defparameter *export-spawns* t
+  "Determine if the spawn locations should be exported to QW map")
+
 
 (defparameter *float-scanner*
   (ppcre:create-scanner "-?[0-9]+([.][0-9]+([Ee][0-9]+)?)")
@@ -156,6 +170,12 @@
 ;;;     (format stream "Faces:~%")
 ;;;     (dolist (f faces) (print-object f stream))))
 
+
+(defun num (n)
+  "Returns either the number or a rounded number, depending on
+*ROUND-TO-INTEGERS* variable value"
+  (if *round-to-integers* (round n) n))
+           
 
 (defmethod find-entity-property ((self entity) name)
   "Returns the list of properties for the entity by the NAME provided.
@@ -679,7 +699,10 @@ OUT is the output stream."
         ;; if not, swap the vertices 
         (rotatef (nth 1 new-vertices) (nth 2 new-vertices)))
       ;; finally output all transformed vertices
-      (mapc (lambda (v) (format out "( ~f ~f ~f ) " (vx v) (vy v) (vz v))) new-vertices))))
+      (mapc (lambda (v)
+              (format out "( ~d ~d ~d ) " (num (vx v)) (num (vy v)) (num (vz v))))
+            new-vertices))))
+
 
 
 (defmethod export-brush ((self brush) transform out)
@@ -771,7 +794,7 @@ Applying transformation matrix GLOBAL-TRANS to the coordinates"
              (format out "{
 \"classname\" \"info_player_deathmatch\"~%")
              (format out "\"origin\" ")
-             (format out "\"~d ~d ~d\"~%" (vx p) (vy p) (vz p))
+             (format out "\"~d ~d ~d\"~%" (num (vx p)) (num (vy p)) (num (vz p)))
              ;; in TrenchBroom only one angle supported - yaw
              (format out "\"angle\" ")
              (format out "\"~f\"~%" (- 90 angle))
@@ -804,7 +827,7 @@ industrial/lights/light_step_sml -> light"
                (format out "{
 \"classname\" \"~a\"~%" (gethash effect-type light-sources))
                (format out "\"origin\" ")
-               (format out "\"~d ~d ~d\"~%" (vx p) (vy p) (vz p))
+               (format out "\"~d ~d ~d\"~%" (num (vx p)) (num (vy p)) (num (vz p)))
                (format out "}~%")))))
        (remove-if-not
         (lambda (e)
@@ -877,7 +900,7 @@ See the mapping below which items are actually supported"
                (format out "{
 \"classname\" \"~a\"~%" (gethash pickup-type pickup-types))
                (format out "\"origin\" ")
-               (format out "\"~d ~d ~d\"~%" (vx p) (vy p) (vz p))
+               (format out "\"~d ~d ~d\"~%" (num (vx p)) (num (vy p)) (num (vz p)))
                (cond ((= pickup-type 41)
                       (format out "\"spawnflags\" \"~d\"~%" 1))
                      ((= pickup-type 42)
@@ -913,9 +936,12 @@ SCALES is a list of scale transformations: along x, y, z axis."
                      global-trans (map-prefabs self))
       (format out "}~%")
       ;; export everything else
-      (export-spawns self out global-trans)
-      (export-lights self out global-trans)
-      (export-items  self out global-trans))))
+      (when *export-spawns*
+        (export-spawns self out global-trans))
+      (when *export-lightsources* 
+        (export-lights self out global-trans))
+      (when *export-items*
+        (export-items  self out global-trans)))))
 
 
 ;; The application main function
