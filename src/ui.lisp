@@ -48,7 +48,7 @@
           (list "Software" company name version))))
 
 
-(defmethod get-value ((self settings) key &optional fallback-value)
+(defmethod get-value ((self settings) key &optional (fallback-value nil fallback-value-supplied-p) )
   "Get the value identified by KEY from the storage SELF.
 If FALLBACK-VALUE specified, use this if not found (and update the storage)"
   (with-slots (product-symbol settings-path) self
@@ -62,11 +62,14 @@ If FALLBACK-VALUE specified, use this if not found (and update the storage)"
                 path (butlast path)))
       (multiple-value-bind (value result)
           (lw:user-preference path key :product product-symbol)
-        (cond ((and result value) (values value result))
-              (fallback-value
+        ;; now if found just return result and indication that everything is alright
+        (cond (result (values value result))
+              ;; otherwise check if the fallback was provided
+              (fallback-value-supplied-p
                (progn
                  (setf (lw:user-preference path key :product product-symbol) fallback-value)
                  (values (lw:user-preference path key :product product-symbol) t)))
+              ;; and just return nil otherwise
               (t (values nil nil)))))))
 
 
