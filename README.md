@@ -5,7 +5,7 @@ Converter of the maps (brushes, some items, lights and spawns) from Reflex Arena
 It is implemented with SBCL on Linux and compiled for Windows with LispWorks 7.1/32bit
 ## Copyright
 
-Copyright (c) Alexey Veretennikov, 2018
+Copyright (c) Alexey Veretennikov, 2018-2019
 
 ## Usage
 Just run the GUI. The GUI supports drag&n&drop operation of the input file.
